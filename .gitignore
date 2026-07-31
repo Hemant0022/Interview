@@ -1,0 +1,7 @@
+myenv
+.env
+.vscode
+build/
+candidate_data/
+session_data/   
+__pycache__
