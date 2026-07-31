@@ -1,31 +1,57 @@
-# Core app
+# # Core app
+# streamlit
+# streamlit-webrtc
+# # Resume engine (existing, unchanged)
+# spacy
+# scikit-learn
+# sentence-transformers   # optional but recommended: enables real semantic matching instead of the TF-IDF fallback
+# pypdf
+# python-docx
+
+# # Interview: camera + behavior analysis (existing detect.py, unchanged)
+# opencv-python
+# mediapipe==0.10.21
+# ultralytics             # YOLOv8 object detection (phone/person)
+
+# # Interview: speech-to-text
+# openai-whisper           # needs ffmpeg installed on the host (apt install ffmpeg / brew install ffmpeg)
+
+# # LLM evaluation + roadmap generation
+# google-genai
+# pdfplumber
+# # Recruiter dashboard
+# pandas
+# plotly
+
+# # PDF report
+# reportlab
+
+# # After installing, also run:
+# #   python -m spacy download en_core_web_sm
+# python-dotenv
+
 streamlit
-streamlit-webrtc
-# Resume engine (existing, unchanged)
+
 spacy
 scikit-learn
-sentence-transformers   # optional but recommended: enables real semantic matching instead of the TF-IDF fallback
+sentence-transformers
 pypdf
 python-docx
 
-# Interview: camera + behavior analysis (existing detect.py, unchanged)
-opencv-python
+opencv-python-headless
 mediapipe==0.10.21
-ultralytics             # YOLOv8 object detection (phone/person)
+ultralytics
 
-# Interview: speech-to-text
-openai-whisper           # needs ffmpeg installed on the host (apt install ffmpeg / brew install ffmpeg)
+faster-whisper
+ctranslate2
+av
 
-# LLM evaluation + roadmap generation
 google-genai
+
 pdfplumber
-# Recruiter dashboard
 pandas
 plotly
-
-# PDF report
 reportlab
-
-# After installing, also run:
-#   python -m spacy download en_core_web_sm
 python-dotenv
+
+opencv-headless
