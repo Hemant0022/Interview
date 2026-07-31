@@ -100,7 +100,7 @@ with st.sidebar:
 # guard — prevents an orphaned camera thread running in the background.
 # ---------------------------------------------------------------------------
 if st.session_state.current_page != "AI Interview" and st.session_state.get("camera_running"):
-    interview_page.stop_camera()
+    interview_page.stop_session()
 
 # ---------------------------------------------------------------------------
 # Route

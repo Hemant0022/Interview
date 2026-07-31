@@ -106,12 +106,26 @@ import av
 import numpy as np
 import streamlit as st
 import torch
-from streamlit_webrtc import webrtc_streamer, WebRtcMode
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
 from backend.detect import process_frame
 from backend import session_store, candidate_store, llm_evaluator
 from backend.transcript_utils import append_transcript
+
+# Without an ICE server, WebRTC negotiation tends to only succeed on
+# localhost/loopback — the moment there's any real network hop between
+# the candidate's browser and the server (a hosted deployment, a
+# different subnet, certain routers/firewalls), the peer connection can
+# fail silently: video and/or audio just never arrive, with no error
+# shown anywhere. A public STUN server fixes this for the vast majority
+# of networks. If you're behind a particularly strict corporate
+# firewall/NAT, you may eventually need a TURN server instead — STUN
+# alone doesn't relay media, it only helps two peers discover a direct
+# path to each other.
+RTC_CONFIGURATION = RTCConfiguration({
+    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+})
 
 
 def stop_session():
@@ -130,11 +144,12 @@ def stop_session():
 # ---------------------------------------------------------------------------
 # Live speech-to-text — ported from voice.py
 # ---------------------------------------------------------------------------
-STT_MODEL_NAME = "openai/whisper-small"
+STT_MODEL_NAME = "openai/whisper-medium.en"
 STT_TARGET_SR = 16000                        # Whisper expects 16kHz audio
 STT_TRANSCRIBE_INTERVAL_SECONDS = 0.0        # minimum time between flush attempts
-STT_MIN_CHUNK_SECONDS = 0.6                  # only flush once buffer has at least this much audio
-STT_SILENCE_RMS_THRESHOLD = 0.002            # below this average energy, treat chunk as silence
+STT_MIN_CHUNK_SECONDS = 1.2                  # only flush once buffer has at least this much audio
+# STT_SILENCE_RMS_THRESHOLD = 0.002            # below this average energy, treat chunk as silence
+STT_SILENCE_RMS_THRESHOLD = 0.0005            # below this average energy, treat chunk as silence
 
 _whisper_singleton_lock = threading.Lock()
 _whisper_singleton = {"processor": None, "model": None, "device": None}
@@ -177,6 +192,12 @@ def _audio_frame_to_float32(audio_frame: av.AudioFrame) -> np.ndarray:
 def _transcribe_chunk(audio_array: np.ndarray, processor, model, device) -> str:
     """Greedy-decode transcription via transformers — matches voice.py's
     transcribe() (translation option omitted; this app is English-only)."""
+    print("Whisper Started")
+    text = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0].strip()
+
+    print("Transcribed:", text)
+
+    return text
     if audio_array.size == 0:
         return ""
     inputs = processor(audio_array, sampling_rate=STT_TARGET_SR, return_tensors="pt")
@@ -379,6 +400,9 @@ def _render_interview():
         media_ctx = webrtc_streamer(
             key="interview-media",
             mode=WebRtcMode.SENDONLY,
+            rtc_configuration=RTC_CONFIGURATION,
+            video_receiver_size=32,
+            audio_receiver_size=128,
             media_stream_constraints={
                 "video": {"width": 640, "height": 480},
                 "audio": True,
@@ -415,7 +439,7 @@ def _render_interview():
         st.session_state.transcription_worker = TranscriptionWorker()
     worker = st.session_state.transcription_worker
 
-    PROCESS_EVERY_N_FRAMES = 3     # run face-detection every Nth new frame
+    PROCESS_EVERY_N_FRAMES = 5     # run face-detection every Nth new frame
     VIDEO_UPDATE_EVERY_N_FRAMES = 2
     PANEL_UPDATE_EVERY_N_FRAMES = 5
 

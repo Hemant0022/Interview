@@ -1,6 +1,6 @@
 # Core app
 streamlit
-
+streamlit-webrtc
 # Resume engine (existing, unchanged)
 spacy
 scikit-learn
