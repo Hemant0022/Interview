@@ -5,5 +5,4 @@ build/
 candidate_data/
 session_data/   
 __pycache__
-.streamlit/
 .streamlit/secrets.toml
