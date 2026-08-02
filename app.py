@@ -19,7 +19,13 @@ load_dotenv()
 import streamlit as st
 
 from modules import home_page, resume_page, interview_page, roadmap_page, recruiter_dashboard
-# os.environ["HF_TOKEN"] = st.secrets.get("HF_TOKEN")
+try:
+    hf_token = st.secrets.get("HF_TOKEN")
+except Exception:
+    hf_token = None
+
+if hf_token:
+    os.environ["HF_TOKEN"] = hf_token
 st.set_page_config(
     page_title="AI Hiring Intelligence",
     page_icon="🧠",
