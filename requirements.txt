@@ -27,6 +27,6 @@ pandas>=2.2.0,<3.0.0
 cython>=3.0.0
 
 
-funasr==1.2.6
+funasr==1.4.0
 modelscope>=1.17.0
 torch

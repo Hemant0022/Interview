@@ -122,9 +122,11 @@ except Exception:
 try:
     from funasr import AutoModel as _FunASRAutoModel
     from funasr.utils.postprocess_utils import rich_transcription_postprocess as _sensevoice_postprocess
-except Exception:
+except Exception as _funasr_import_error:
     _FunASRAutoModel = None
     _sensevoice_postprocess = None
+else:
+    _funasr_import_error = None
 
 from backend.detect import process_frame
 from backend import session_store, candidate_store, llm_evaluator
@@ -207,8 +209,9 @@ STT_MAX_CHUNK_SECONDS = float(os.getenv("STT_MAX_CHUNK_SECONDS", "4.0"))
 # fully offline once its model folder is on disk), then faster-whisper,
 # then the transformers fallback. Set STT_ENGINE to pin a single engine
 # instead (useful for testing, or to force one over another on a box
-# that has multiple installed). Pinned to "sensevoice" per current setup.
-STT_ENGINE = os.getenv("STT_ENGINE", "sensevoice").lower()  # "sensevoice" | "vosk" | "faster_whisper" | "transformers" | "auto"
+# that has multiple installed). Default to "auto" so deployments can
+# fall back cleanly if SenseVoice is unavailable.
+STT_ENGINE = os.getenv("STT_ENGINE", "auto").lower()  # "sensevoice" | "vosk" | "faster_whisper" | "transformers" | "auto"
 
 # SenseVoice (via funasr) model id — auto-downloaded from ModelScope/HF
 # on first run and cached locally after that, same "slow first time only"
@@ -223,14 +226,14 @@ SENSEVOICE_LANGUAGE = os.getenv("SENSEVOICE_LANGUAGE", "en")  # this app is Engl
 # model trades size/RAM for better accuracy). Download once and point
 # this at the extracted folder — Vosk does not fetch models itself.
 #
-# Default resolves relative to THIS FILE, not the process's current
-# working directory — a bare relative default like "models/..." would
-# silently point somewhere different depending on where `streamlit run`
-# happens to be launched from. Set VOSK_MODEL_PATH explicitly to
-# override with an absolute path if you keep the model elsewhere.
+# Default resolves to the repo root, not the process's current working
+# directory, so the packaged `models/` folder is found in Streamlit Cloud
+# and local runs alike. Set VOSK_MODEL_PATH explicitly to override with
+# an absolute path if you keep the model elsewhere.
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VOSK_MODEL_PATH = os.getenv(
     "VOSK_MODEL_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "vosk-model-small-en-us-0.15"),
+    os.path.join(_repo_root, "models", "vosk-model-small-en-us-0.15"),
 )
 VOSK_SAMPLE_RATE = STT_TARGET_SR  # the en-us Vosk models above are trained at 16kHz, matching our pipeline
 
@@ -265,7 +268,12 @@ def _load_stt_backend_once():
         for engine in engine_order:
             if engine == "sensevoice":
                 if _FunASRAutoModel is None:
-                    skip_reasons.append("sensevoice: funasr package not installed (pip install funasr)")
+                    if _funasr_import_error is None:
+                        skip_reasons.append("sensevoice: funasr package not installed (pip install funasr)")
+                    else:
+                        skip_reasons.append(
+                            f"sensevoice: funasr import failed ({type(_funasr_import_error).__name__}: {_funasr_import_error})"
+                        )
                     continue
                 sv_device = "cuda:0" if device == "cuda" else "cpu"
                 model = _FunASRAutoModel(
