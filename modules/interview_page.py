@@ -122,9 +122,10 @@ except Exception:
 try:
     from funasr import AutoModel as _FunASRAutoModel
     from funasr.utils.postprocess_utils import rich_transcription_postprocess as _sensevoice_postprocess
-except Exception as _funasr_import_error:
+except Exception as _funasr_import_exception:
     _FunASRAutoModel = None
     _sensevoice_postprocess = None
+    _funasr_import_error = _funasr_import_exception
 else:
     _funasr_import_error = None
 
@@ -275,16 +276,20 @@ def _load_stt_backend_once():
                             f"sensevoice: funasr import failed ({type(_funasr_import_error).__name__}: {_funasr_import_error})"
                         )
                     continue
-                sv_device = "cuda:0" if device == "cuda" else "cpu"
-                model = _FunASRAutoModel(
-                    model=SENSEVOICE_MODEL_NAME,
-                    trust_remote_code=True,
-                    device=sv_device,
-                    disable_update=True,
-                    disable_pbar=True,
-                )
-                _whisper_singleton["backend"] = {"kind": "sensevoice", "model": model}
-                break
+                try:
+                    sv_device = "cuda:0" if device == "cuda" else "cpu"
+                    model = _FunASRAutoModel(
+                        model=SENSEVOICE_MODEL_NAME,
+                        trust_remote_code=True,
+                        device=sv_device,
+                        disable_update=True,
+                        disable_pbar=True,
+                    )
+                    _whisper_singleton["backend"] = {"kind": "sensevoice", "model": model}
+                    break
+                except Exception as exc:
+                    skip_reasons.append(f"sensevoice: failed to load model ({type(exc).__name__}: {exc})")
+                    continue
 
             elif engine == "vosk":
                 if vosk is None:
@@ -296,33 +301,49 @@ def _load_stt_backend_once():
                         "(download a model from https://alphacephei.com/vosk/models and unzip it there)"
                     )
                     continue
-                model = vosk.Model(VOSK_MODEL_PATH)
-                _whisper_singleton["backend"] = {"kind": "vosk", "model": model}
-                break
+                try:
+                    model = vosk.Model(VOSK_MODEL_PATH)
+                    _whisper_singleton["backend"] = {"kind": "vosk", "model": model}
+                    break
+                except Exception as exc:
+                    skip_reasons.append(f"vosk: failed to load model ({type(exc).__name__}: {exc})")
+                    continue
 
             elif engine == "faster_whisper":
                 if WhisperModel is None:
                     skip_reasons.append("faster_whisper: package not installed")
                     continue
-                compute_type = "float16" if device == "cuda" else "int8"
-                model = WhisperModel(STT_MODEL_NAME, device=device, compute_type=compute_type)
-                _whisper_singleton["backend"] = {
-                    "kind": "faster_whisper",
-                    "model": model,
-                }
-                break
+                try:
+                    compute_type = "float16" if device == "cuda" else "int8"
+                    model = WhisperModel(STT_MODEL_NAME, device=device, compute_type=compute_type)
+                    _whisper_singleton["backend"] = {
+                        "kind": "faster_whisper",
+                        "model": model,
+                    }
+                    break
+                except Exception as exc:
+                    skip_reasons.append(
+                        f"faster_whisper: failed to load model {STT_MODEL_NAME!r} ({type(exc).__name__}: {exc})"
+                    )
+                    continue
 
             elif engine == "transformers":
-                processor = WhisperProcessor.from_pretrained(STT_TRANSFORMERS_MODEL_NAME)
-                model = WhisperForConditionalGeneration.from_pretrained(STT_TRANSFORMERS_MODEL_NAME).to(device)
-                model.eval()
-                _whisper_singleton["backend"] = {
-                    "kind": "transformers",
-                    "processor": processor,
-                    "model": model,
-                    "device": device,
-                }
-                break
+                try:
+                    processor = WhisperProcessor.from_pretrained(STT_TRANSFORMERS_MODEL_NAME)
+                    model = WhisperForConditionalGeneration.from_pretrained(STT_TRANSFORMERS_MODEL_NAME).to(device)
+                    model.eval()
+                    _whisper_singleton["backend"] = {
+                        "kind": "transformers",
+                        "processor": processor,
+                        "model": model,
+                        "device": device,
+                    }
+                    break
+                except Exception as exc:
+                    skip_reasons.append(
+                        f"transformers: failed to load model {STT_TRANSFORMERS_MODEL_NAME!r} ({type(exc).__name__}: {exc})"
+                    )
+                    continue
 
         if _whisper_singleton["backend"] is None:
             raise RuntimeError(
