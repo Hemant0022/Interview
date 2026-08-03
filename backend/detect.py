@@ -606,7 +606,7 @@ model_path = os.path.join(
     ROOT_DIR, "models", "face_detection_yunet_2023mar.onnx"
 )
 yolo_model= os.path.join(
-    ROOT_DIR, "models", "yolov8n.pt"
+    ROOT_DIR, "models", "yolo26n.pt"
 )
 # ============================================================
 # Face Quality Functions
@@ -696,8 +696,8 @@ def draw_face_boxes(frame, last_faces, primary_ok):
 
 # YUNET_MODEL_PATH = "models/face_detection_yunet_2023mar.onnx
 # YUNET_MODEL_PATH = str(ROOT_DIR)
-DETECT_EVERY_N_FRAMES = 8    # re-run YuNet face detection every N frames, reuse bbox in between
-YOLO_EVERY_N_FRAMES = 8      # re-run YOLO object detection every N frames, reuse results in between
+DETECT_EVERY_N_FRAMES = 3   # re-run YuNet face detection every N frames, reuse bbox in between
+YOLO_EVERY_N_FRAMES = 5      # re-run YOLO object detection every N frames, reuse results in between
 # MediaPipe FaceMesh (468-point landmark model) was previously running on
 # EVERY frame with no throttling at all — unlike YuNet/YOLO above, which
 # are both already throttled. FaceMesh is typically the single heaviest
@@ -709,7 +709,7 @@ YOLO_EVERY_N_FRAMES = 8      # re-run YOLO object detection every N frames, reus
 # inferences vs. before). Head-pose/gaze are recomputed every frame from
 # the (possibly reused) landmarks, so attention feedback still updates
 # every frame — only the landmark inference itself is throttled.
-FACEMESH_EVERY_N_FRAMES = 3
+FACEMESH_EVERY_N_FRAMES = 8
 DRAW_LANDMARKS = False       # draw the 468 FaceMesh dots on the frame (adds per-frame cost + visual clutter)
 
 # Head-pose direction thresholds (degrees). This head-pose estimate uses
@@ -759,8 +759,8 @@ face_mesh = mp_face_mesh.FaceMesh(
 )
 print("[INFO] FaceMesh loaded.")
 
-print("[INFO] Loading YOLOv8 model for object detection...")
-model = YOLO(str(yolo_model))  # yolov8n.pt is the smallest, fastest model; yolov8s.pt is a bit more accurate but slower
+print("[INFO] Loading YOLO26n model for object detection...")
+model = YOLO(str(yolo_model))  # yolov26n.pt is the smallest, fastest model; yolov26s.pt is a bit more accurate but slower
 
 # Use GPU automatically if the machine has one available (this is by far
 # the biggest lever for YOLO speed — CPU inference is the usual
@@ -775,9 +775,9 @@ try:
 except ImportError:
     print("[INFO] YOLO running on CPU (torch not fully available).")
 
-print("[INFO] YOLOv8 model loaded.")
+print("[INFO] YOLO26n model loaded.")
 
-YOLO_INFERENCE_SIZE = 320  # smaller than the default 640 -> much faster, some accuracy trade-off
+YOLO_INFERENCE_SIZE = 512  # smaller than the default 640 -> much faster, some accuracy trade-off
 
 # 3D face model points used for solvePnP head-pose estimation
 FACE_MODEL_3D = {

@@ -46,7 +46,7 @@ ultralytics
 faster-whisper
 ctranslate2
 av
-
+funasr
 google-genai
 
 pdfplumber
