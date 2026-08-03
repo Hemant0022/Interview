@@ -14,7 +14,7 @@ faster-whisper
 ctranslate2
 av
 torch
-torch-audio
+torchaudio
 google-genai
 pdfplumber
 plotly
