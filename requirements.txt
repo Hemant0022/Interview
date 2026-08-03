@@ -13,7 +13,8 @@ ultralytics
 faster-whisper
 ctranslate2
 av
-
+torch
+torch-audio
 google-genai
 pdfplumber
 plotly
