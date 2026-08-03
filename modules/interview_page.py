@@ -221,6 +221,16 @@ STT_ENGINE = os.getenv("STT_ENGINE", "auto").lower()  # "sensevoice" | "vosk" | 
 SENSEVOICE_MODEL_NAME = os.getenv("SENSEVOICE_MODEL_NAME", "iic/SenseVoiceSmall")
 SENSEVOICE_LANGUAGE = os.getenv("SENSEVOICE_LANGUAGE", "en")  # this app is English-only, matching the other engines
 
+# When true, backends must use local caches only and must not try to
+# download models again. This is the safest default for Streamlit Cloud
+# once the models have been warmed up or bundled locally.
+STT_USE_CACHED_MODELS_ONLY = os.getenv("STT_USE_CACHED_MODELS_ONLY", "1") != "0"
+
+if STT_USE_CACHED_MODELS_ONLY:
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("MODELSCOPE_OFFLINE", "1")
+
 # Path to an unzipped Vosk model directory, e.g. one of the models at
 # https://alphacephei.com/vosk/models (the "small" en-us model is ~40MB
 # and good enough for interview-quality audio; the larger "en-us-0.22"
@@ -315,7 +325,12 @@ def _load_stt_backend_once():
                     continue
                 try:
                     compute_type = "float16" if device == "cuda" else "int8"
-                    model = WhisperModel(STT_MODEL_NAME, device=device, compute_type=compute_type)
+                    model = WhisperModel(
+                        STT_MODEL_NAME,
+                        device=device,
+                        compute_type=compute_type,
+                        local_files_only=STT_USE_CACHED_MODELS_ONLY,
+                    )
                     _whisper_singleton["backend"] = {
                         "kind": "faster_whisper",
                         "model": model,
@@ -329,8 +344,14 @@ def _load_stt_backend_once():
 
             elif engine == "transformers":
                 try:
-                    processor = WhisperProcessor.from_pretrained(STT_TRANSFORMERS_MODEL_NAME)
-                    model = WhisperForConditionalGeneration.from_pretrained(STT_TRANSFORMERS_MODEL_NAME).to(device)
+                    processor = WhisperProcessor.from_pretrained(
+                        STT_TRANSFORMERS_MODEL_NAME,
+                        local_files_only=STT_USE_CACHED_MODELS_ONLY,
+                    )
+                    model = WhisperForConditionalGeneration.from_pretrained(
+                        STT_TRANSFORMERS_MODEL_NAME,
+                        local_files_only=STT_USE_CACHED_MODELS_ONLY,
+                    ).to(device)
                     model.eval()
                     _whisper_singleton["backend"] = {
                         "kind": "transformers",
