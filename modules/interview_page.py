@@ -171,8 +171,13 @@ STT_TRANSFORMERS_MODEL_NAME = os.getenv("STT_TRANSFORMERS_MODEL_NAME", "openai/w
 STT_TARGET_SR = 16000                        # Whisper expects 16kHz audio
 STT_TRANSCRIBE_INTERVAL_SECONDS = 0.0        # minimum time between flush attempts
 STT_MIN_CHUNK_SECONDS = float(os.getenv("STT_MIN_CHUNK_SECONDS", "0.5"))  # only flush once buffer has at least this much audio
-# STT_SILENCE_RMS_THRESHOLD = 0.002            # below this average energy, treat chunk as silence
-STT_SILENCE_RMS_THRESHOLD = 0.0005            # below this average energy, treat chunk as silence
+# Was dropped to 0.0005 at one point (4x more permissive than 0.002) —
+# that let near-silent room noise/hum clear the "is this speech" gate and
+# get sent to the STT backend, and Whisper/SenseVoice-style models are
+# prone to hallucinating plausible-looking words on silent/noisy audio
+# rather than returning nothing. Restored to 0.002; re-tune against a real
+# quiet-room recording if your mic hardware runs unusually quiet or loud.
+STT_SILENCE_RMS_THRESHOLD = float(os.getenv("STT_SILENCE_RMS_THRESHOLD", "0.002"))
 
 # Every chunk is decoded independently (no context carried between them),
 # so a word spoken right at a flush boundary gets split across two

@@ -3,9 +3,7 @@ llm_evaluator.py
 =================
 LLM-based interview intelligence. Two jobs:
 
-1. QUESTION GENERATION  -> pulls a small set of interview questions out of the
-   resume/JD context (technical + behavioral), instead of a static question bank.
-2. ANSWER EVALUATION    -> scores a candidate's spoken answer (transcript) on
+1. ANSWER EVALUATION    -> scores a candidate's spoken answer (transcript) on
    Technical Accuracy, Communication, Confidence, Grammar, Completeness and
    Relevance, matching the "AI Evaluation" panel in the product spec.
 

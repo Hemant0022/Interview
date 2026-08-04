@@ -146,8 +146,19 @@ def build_roadmap(
     strengths_and_weaknesses(); missing_jd_skills from skill_match;
     interview_weak_dimensions from the LLM evaluator's aggregate_scores
     (any dimension scoring < 70)."""
-    missing_jd_skills = missing_jd_skills or []
-    interview_weak_dimensions = interview_weak_dimensions or []
+    # Normalize every incoming label here, centrally, regardless of caller:
+    # interview dimension keys arrive as snake_case (e.g. "technical_knowledge")
+    # while RESOURCE_LIBRARY and display code expect space-separated, natural
+    # phrasing (e.g. "technical knowledge"). Without this, snake_case topics
+    # never match a library entry (silently falling back to the generic
+    # resource) and render ugly ("Technical_Knowledge") in the UI.
+    def _norm(items: Optional[List[str]]) -> List[str]:
+        return [str(x).replace("_", " ").strip() for x in (items or []) if str(x).strip()]
+
+    strengths = _norm(strengths)
+    weak_areas = _norm(weak_areas)
+    missing_jd_skills = _norm(missing_jd_skills)
+    interview_weak_dimensions = _norm(interview_weak_dimensions)
 
     all_focus = list(dict.fromkeys(weak_areas + missing_jd_skills + interview_weak_dimensions))
     if not all_focus:

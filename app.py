@@ -19,6 +19,14 @@ load_dotenv()
 import streamlit as st
 
 from modules import home_page, resume_page, interview_page, roadmap_page, recruiter_dashboard
+for secret_name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "HF_TOKEN"):
+    try:
+        secret_value = st.secrets.get(secret_name)
+    except Exception:
+        secret_value = None
+    if secret_value and not os.environ.get(secret_name):
+        os.environ[secret_name] = secret_value
+
 try:
     hf_token = st.secrets.get("HF_TOKEN")
 except Exception:
@@ -116,8 +124,12 @@ page = st.session_state.current_page
 if page == "Settings":
     st.title("⚙️ Settings")
     st.write("**LLM Evaluation**")
-    import os
-    has_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+    has_key = bool(
+        os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or st.secrets.get("GEMINI_API_KEY", None)
+        or st.secrets.get("GOOGLE_API_KEY", None)
+    )
     st.write(f"GEMINI_API_KEY configured: {'✅ Yes' if has_key else '❌ No — set this env var to enable LLM-graded interview scoring and personalized roadmaps.'}")
     st.write("**Candidate Data**")
     from backend import candidate_store
