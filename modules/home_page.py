@@ -9,7 +9,7 @@ def render():
         <div style="text-align:center; padding: 30px 0 10px;">
             <h1 style="margin-bottom:4px;">🧠 AI Hiring Intelligence</h1>
             <p style="color:#64748B; font-size:16px;">
-                Resume screening, job matching, AI interviews, and a recruiter dashboard — in one flow.
+                Resume screening, job matching, AI Mock interviews, and a recruiter dashboard — in one flow.
             </p>
         </div>
         """,
@@ -20,7 +20,7 @@ def render():
     features = [
         ("📄", "Resume Screening", "ATS-style scoring against a job description."),
         ("🎯", "Job Matching", "Skill, experience and education fit, explained."),
-        ("🎥", "AI Interview", "Webcam + voice interview with live LLM evaluation."),
+        ("🎥", "AI Mock Interview", "Webcam + voice interview with live LLM evaluation."),
         ("📊", "Recruiter Dashboard", "Rank candidates and export PDF reports."),
     ]
     for col, (icon, title, desc) in zip(cols, features):

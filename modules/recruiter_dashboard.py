@@ -40,10 +40,11 @@ def render():
     def _style_row(row):
         color = {"Hire": "background-color: #E7FBF1", "Consider": "background-color: #FFF7E6",
                  "Upskill": "background-color: #FFF1EB", "Not a fit": "background-color: #FEECEB"}
-        return [color.get(row["Recommendation"], "")] * len(row)
+        bg = color.get(row["Recommendation"], "#FFFFFF")
+        return [f"background-color:{bg}; color:black; font-weight:bold"]* len(row)
 
     st.dataframe(
-        ranked.drop(columns=["id"]).style.apply(_style_row, axis=1),
+        ranked.drop(columns=["id"]),
         use_container_width=True, hide_index=True,
     )
 

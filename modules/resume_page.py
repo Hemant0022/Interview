@@ -80,6 +80,33 @@ def render_structured_section(section_content: str, default_msg: str):
         """
         st.markdown(card_html, unsafe_allow_html=True)
 
+
+def render_match_missing(matched, missing, feedback, matched_empty="No matches found.", missing_empty="Nothing missing."):
+    """Render a Matched / Missing block with clear visual separation between
+    each heading, and cards that show the actual matched/missing text
+    (not just a generic 'matched' / 'not matched' label)."""
+
+    st.markdown('<div class="subsection-title">✅ Matched</div>', unsafe_allow_html=True)
+    if matched:
+        for item in matched:
+            st.markdown(f'<div class="match-card match-good">{item}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="match-card match-neutral">{matched_empty}</div>', unsafe_allow_html=True)
+
+    st.markdown('<hr class="tab-divider">', unsafe_allow_html=True)
+
+    st.markdown('<div class="subsection-title">⚠️ Missing</div>', unsafe_allow_html=True)
+    if missing:
+        for item in missing:
+            st.markdown(f'<div class="match-card match-bad">{item}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="match-card match-good">{missing_empty}</div>', unsafe_allow_html=True)
+
+    st.markdown('<hr class="tab-divider">', unsafe_allow_html=True)
+
+    if feedback:
+        st.info(feedback)
+
 # ---------------------------------------------------------------------------
 
 
@@ -102,8 +129,25 @@ def render():
     }
     .chip-good {background:#E7FBF1; color:#12B76A;}
     .chip-bad {background:#FEECEB; color:#F04438;}
-    .section-title {font-size:17px; font-weight:700; margin:26px 0 10px;}
+    .section-title {
+        font-size:17px; font-weight:700; margin:32px 0 10px;
+        padding-top:20px; border-top:1px solid #E2E8F0;
+    }
     .small-note {color:#6B7280; font-size:12.5px;}
+    .subsection-title {
+        font-size:14px; font-weight:700; letter-spacing:0.2px;
+        margin:4px 0 10px; color:#1E293B;
+    }
+    .match-card {
+        border-radius:10px; padding:10px 14px; margin-bottom:8px;
+        font-size:14px; line-height:1.5; border-left:4px solid transparent;
+    }
+    .match-good {background:#F0FDF6; color:#0F5132; border-left-color:#12B76A;}
+    .match-bad {background:#FEF2F2; color:#7A1F1A; border-left-color:#F04438;}
+    .match-neutral {background:#F1F5F9; color:#475569; border-left-color:#94A3B8;}
+    hr.tab-divider {
+        border:none; border-top:1px solid #E2E8F0; margin:18px 0 20px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -261,84 +305,27 @@ def render():
 
         with tabs[0]:
             edu = analysis["education"]
+            render_match_missing(edu["matched"], edu["missing"], edu["feedback"])
 
-            st.write("### Matched")
-            if edu["matched"]:
-                for item in edu["matched"]:
-                    st.success(item)
-            else:
-                st.info("No matches found.")
-
-            st.write("### Missing")
-            if edu["missing"]:
-                for item in edu["missing"]:
-                    st.error(item)
-            else:
-                st.success("Nothing missing.")
-
-            st.info(edu["feedback"])
         with tabs[1]:
             tech = analysis["technical_skills"]
-
-            st.write("### Matched")
-            for item in tech["matched"]:
-                st.success(item)
-
-            st.write("### Missing")
-            for item in tech["missing"]:
-                st.error(item)
-
-            st.info(tech["feedback"])
+            render_match_missing(tech["matched"], tech["missing"], tech["feedback"])
 
         with tabs[2]:
             soft = analysis["soft_skills"]
+            render_match_missing(soft["matched"], soft["missing"], soft["feedback"])
 
-            st.write("### Matched")
-            for item in soft["matched"]:
-                st.success(item)
-
-            st.write("### Missing")
-            for item in soft["missing"]:
-                st.error(item)
-
-            st.info(soft["feedback"])
         with tabs[3]:
             exp = analysis["experience"]
+            render_match_missing(exp["matched"], exp["missing"], exp["feedback"])
 
-            st.write("### Matched")
-            for item in exp["matched"]:
-                st.success(item)
-
-            st.write("### Missing")
-            for item in exp["missing"]:
-                st.error(item)
-
-            st.info(exp["feedback"])
         with tabs[4]:
             proj = analysis["projects"]
-
-            st.write("### Matched")
-            for item in proj["matched"]:
-                st.success(item)
-
-            st.write("### Missing")
-            for item in proj["missing"]:
-                st.error(item)
-
-            st.info(proj["feedback"])
+            render_match_missing(proj["matched"], proj["missing"], proj["feedback"])
 
         with tabs[5]:
             cert = analysis["certifications"]
-
-            st.write("### Matched")
-            for item in cert["matched"]:
-                st.success(item)
-
-            st.write("### Missing")
-            for item in cert["missing"]:
-                st.error(item)
-
-            st.info(cert["feedback"])
+            render_match_missing(cert["matched"], cert["missing"], cert["feedback"])
         # ---- Key scores ----
         st.markdown('<div class="section-title">Your scores</div>', unsafe_allow_html=True)
         m1, m2, m3, m4 = st.columns(4)
@@ -458,7 +445,7 @@ def render():
 
         st.divider()
         if st.button("Continue to AI Interview →", type="primary"):
-            st.session_state.nav_target = "AI Interview"
+            st.session_state.nav_target = "AI Mock Interview"
             st.rerun()
 
     else:

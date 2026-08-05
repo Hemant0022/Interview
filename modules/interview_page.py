@@ -122,12 +122,9 @@ except Exception:
 try:
     from funasr import AutoModel as _FunASRAutoModel
     from funasr.utils.postprocess_utils import rich_transcription_postprocess as _sensevoice_postprocess
-except Exception as _funasr_import_exception:
+except Exception:
     _FunASRAutoModel = None
     _sensevoice_postprocess = None
-    _funasr_import_error = _funasr_import_exception
-else:
-    _funasr_import_error = None
 
 from backend.detect import process_frame
 from backend import session_store, candidate_store, llm_evaluator
@@ -171,13 +168,8 @@ STT_TRANSFORMERS_MODEL_NAME = os.getenv("STT_TRANSFORMERS_MODEL_NAME", "openai/w
 STT_TARGET_SR = 16000                        # Whisper expects 16kHz audio
 STT_TRANSCRIBE_INTERVAL_SECONDS = 0.0        # minimum time between flush attempts
 STT_MIN_CHUNK_SECONDS = float(os.getenv("STT_MIN_CHUNK_SECONDS", "0.5"))  # only flush once buffer has at least this much audio
-# Was dropped to 0.0005 at one point (4x more permissive than 0.002) —
-# that let near-silent room noise/hum clear the "is this speech" gate and
-# get sent to the STT backend, and Whisper/SenseVoice-style models are
-# prone to hallucinating plausible-looking words on silent/noisy audio
-# rather than returning nothing. Restored to 0.002; re-tune against a real
-# quiet-room recording if your mic hardware runs unusually quiet or loud.
-STT_SILENCE_RMS_THRESHOLD = float(os.getenv("STT_SILENCE_RMS_THRESHOLD", "0.002"))
+# STT_SILENCE_RMS_THRESHOLD = 0.002            # below this average energy, treat chunk as silence
+STT_SILENCE_RMS_THRESHOLD = 0.0005            # below this average energy, treat chunk as silence
 
 # Every chunk is decoded independently (no context carried between them),
 # so a word spoken right at a flush boundary gets split across two
@@ -215,9 +207,8 @@ STT_MAX_CHUNK_SECONDS = float(os.getenv("STT_MAX_CHUNK_SECONDS", "4.0"))
 # fully offline once its model folder is on disk), then faster-whisper,
 # then the transformers fallback. Set STT_ENGINE to pin a single engine
 # instead (useful for testing, or to force one over another on a box
-# that has multiple installed). Default to "auto" so deployments can
-# fall back cleanly if SenseVoice is unavailable.
-STT_ENGINE = os.getenv("STT_ENGINE", "auto").lower()  # "sensevoice" | "vosk" | "faster_whisper" | "transformers" | "auto"
+# that has multiple installed). Pinned to "sensevoice" per current setup.
+STT_ENGINE = os.getenv("STT_ENGINE", "sensevoice").lower()  # "sensevoice" | "vosk" | "faster_whisper" | "transformers" | "auto"
 
 # SenseVoice (via funasr) model id — auto-downloaded from ModelScope/HF
 # on first run and cached locally after that, same "slow first time only"
@@ -226,30 +217,20 @@ STT_ENGINE = os.getenv("STT_ENGINE", "auto").lower()  # "sensevoice" | "vosk" | 
 SENSEVOICE_MODEL_NAME = os.getenv("SENSEVOICE_MODEL_NAME", "iic/SenseVoiceSmall")
 SENSEVOICE_LANGUAGE = os.getenv("SENSEVOICE_LANGUAGE", "en")  # this app is English-only, matching the other engines
 
-# When true, backends must use local caches only and must not try to
-# download models again. This is the safest default for Streamlit Cloud
-# once the models have been warmed up or bundled locally.
-STT_USE_CACHED_MODELS_ONLY = os.getenv("STT_USE_CACHED_MODELS_ONLY", "1") != "0"
-
-if STT_USE_CACHED_MODELS_ONLY:
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-    os.environ.setdefault("MODELSCOPE_OFFLINE", "1")
-
 # Path to an unzipped Vosk model directory, e.g. one of the models at
 # https://alphacephei.com/vosk/models (the "small" en-us model is ~40MB
 # and good enough for interview-quality audio; the larger "en-us-0.22"
 # model trades size/RAM for better accuracy). Download once and point
 # this at the extracted folder — Vosk does not fetch models itself.
 #
-# Default resolves to the repo root, not the process's current working
-# directory, so the packaged `models/` folder is found in Streamlit Cloud
-# and local runs alike. Set VOSK_MODEL_PATH explicitly to override with
-# an absolute path if you keep the model elsewhere.
-_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Default resolves relative to THIS FILE, not the process's current
+# working directory — a bare relative default like "models/..." would
+# silently point somewhere different depending on where `streamlit run`
+# happens to be launched from. Set VOSK_MODEL_PATH explicitly to
+# override with an absolute path if you keep the model elsewhere.
 VOSK_MODEL_PATH = os.getenv(
     "VOSK_MODEL_PATH",
-    os.path.join(_repo_root, "models", "vosk-model-small-en-us-0.15"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "vosk-model-small-en-us-0.15"),
 )
 VOSK_SAMPLE_RATE = STT_TARGET_SR  # the en-us Vosk models above are trained at 16kHz, matching our pipeline
 
@@ -284,27 +265,18 @@ def _load_stt_backend_once():
         for engine in engine_order:
             if engine == "sensevoice":
                 if _FunASRAutoModel is None:
-                    if _funasr_import_error is None:
-                        skip_reasons.append("sensevoice: funasr package not installed (pip install funasr)")
-                    else:
-                        skip_reasons.append(
-                            f"sensevoice: funasr import failed ({type(_funasr_import_error).__name__}: {_funasr_import_error})"
-                        )
+                    skip_reasons.append("sensevoice: funasr package not installed (pip install funasr)")
                     continue
-                try:
-                    sv_device = "cuda:0" if device == "cuda" else "cpu"
-                    model = _FunASRAutoModel(
-                        model=SENSEVOICE_MODEL_NAME,
-                        trust_remote_code=True,
-                        device=sv_device,
-                        disable_update=True,
-                        disable_pbar=True,
-                    )
-                    _whisper_singleton["backend"] = {"kind": "sensevoice", "model": model}
-                    break
-                except Exception as exc:
-                    skip_reasons.append(f"sensevoice: failed to load model ({type(exc).__name__}: {exc})")
-                    continue
+                sv_device = "cuda:0" if device == "cuda" else "cpu"
+                model = _FunASRAutoModel(
+                    model=SENSEVOICE_MODEL_NAME,
+                    trust_remote_code=True,
+                    device=sv_device,
+                    disable_update=True,
+                    disable_pbar=True,
+                )
+                _whisper_singleton["backend"] = {"kind": "sensevoice", "model": model}
+                break
 
             elif engine == "vosk":
                 if vosk is None:
@@ -316,60 +288,33 @@ def _load_stt_backend_once():
                         "(download a model from https://alphacephei.com/vosk/models and unzip it there)"
                     )
                     continue
-                try:
-                    model = vosk.Model(VOSK_MODEL_PATH)
-                    _whisper_singleton["backend"] = {"kind": "vosk", "model": model}
-                    break
-                except Exception as exc:
-                    skip_reasons.append(f"vosk: failed to load model ({type(exc).__name__}: {exc})")
-                    continue
+                model = vosk.Model(VOSK_MODEL_PATH)
+                _whisper_singleton["backend"] = {"kind": "vosk", "model": model}
+                break
 
             elif engine == "faster_whisper":
                 if WhisperModel is None:
                     skip_reasons.append("faster_whisper: package not installed")
                     continue
-                try:
-                    compute_type = "float16" if device == "cuda" else "int8"
-                    model = WhisperModel(
-                        STT_MODEL_NAME,
-                        device=device,
-                        compute_type=compute_type,
-                        local_files_only=STT_USE_CACHED_MODELS_ONLY,
-                    )
-                    _whisper_singleton["backend"] = {
-                        "kind": "faster_whisper",
-                        "model": model,
-                    }
-                    break
-                except Exception as exc:
-                    skip_reasons.append(
-                        f"faster_whisper: failed to load model {STT_MODEL_NAME!r} ({type(exc).__name__}: {exc})"
-                    )
-                    continue
+                compute_type = "float16" if device == "cuda" else "int8"
+                model = WhisperModel(STT_MODEL_NAME, device=device, compute_type=compute_type)
+                _whisper_singleton["backend"] = {
+                    "kind": "faster_whisper",
+                    "model": model,
+                }
+                break
 
             elif engine == "transformers":
-                try:
-                    processor = WhisperProcessor.from_pretrained(
-                        STT_TRANSFORMERS_MODEL_NAME,
-                        local_files_only=STT_USE_CACHED_MODELS_ONLY,
-                    )
-                    model = WhisperForConditionalGeneration.from_pretrained(
-                        STT_TRANSFORMERS_MODEL_NAME,
-                        local_files_only=STT_USE_CACHED_MODELS_ONLY,
-                    ).to(device)
-                    model.eval()
-                    _whisper_singleton["backend"] = {
-                        "kind": "transformers",
-                        "processor": processor,
-                        "model": model,
-                        "device": device,
-                    }
-                    break
-                except Exception as exc:
-                    skip_reasons.append(
-                        f"transformers: failed to load model {STT_TRANSFORMERS_MODEL_NAME!r} ({type(exc).__name__}: {exc})"
-                    )
-                    continue
+                processor = WhisperProcessor.from_pretrained(STT_TRANSFORMERS_MODEL_NAME)
+                model = WhisperForConditionalGeneration.from_pretrained(STT_TRANSFORMERS_MODEL_NAME).to(device)
+                model.eval()
+                _whisper_singleton["backend"] = {
+                    "kind": "transformers",
+                    "processor": processor,
+                    "model": model,
+                    "device": device,
+                }
+                break
 
         if _whisper_singleton["backend"] is None:
             raise RuntimeError(
@@ -615,7 +560,7 @@ def _init_state():
 
 def render():
     _init_state()
-    st.title("🎥 AI Interview")
+    st.title("🎥 AI Mock Interview")
 
     if st.session_state.interview_stage == "setup":
         _render_setup()
@@ -629,14 +574,14 @@ def render():
 # Stage 1 — setup
 # ---------------------------------------------------------------------------
 def _render_setup():
-    st.info(
-        "Start the interview and speak freely about your background, projects, and experience "
-        "while the interviewer asks questions on their end. "
-        "No questions are generated or shown by this page."
-    )
+    # st.info(
+    #     # "Start the interview and speak freely about your background, projects, and experience "
+    #     "while the interviewer asks questions on their end. "
+    #     "No questions are generated or shown by this page."
+    # )
     st.caption(
-        "You'll be asked to allow camera + microphone access in your browser. Your face, attention, "
-        "and behavior are tracked throughout, and your speech is transcribed live — nothing is uploaded anywhere."
+        "You'll be asked to allow camera & microphone access in your browser. Your face, attention, "
+        "and behavior will be tracked throughout, and your speech will be transcribed live"
     )
     if st.button("▶️ Start Interview", type="primary"):
         st.session_state.qa_records = []

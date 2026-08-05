@@ -1207,19 +1207,56 @@ def analyze_resume_sections(
 
     score = round(score, 1)
 
+    # ---- Build specific, text-level matched/missing entries instead of a
+    #      single generic "Education requirement matched/missing" label, so
+    #      the candidate can see exactly *what* in the JD their resume does
+    #      or doesn't cover. ----
+    DEGREE_RANK = {"Diploma": 0, "Bachelor": 1, "Master": 2, "PhD": 3}
+    jd_degree = jd_education.get("degree")
+    resume_degree = resume_info.get("degree")
+    jd_fields = jd_education.get("fields") or []
+    resume_fields = resume_info.get("fields") or []
+
+    edu_matched, edu_missing = [], []
+
+    if jd_degree:
+        if resume_degree and (
+            resume_degree == jd_degree
+            or DEGREE_RANK.get(resume_degree, -1) > DEGREE_RANK.get(jd_degree, 99)
+        ):
+            edu_matched.append(
+                f"Degree — JD requires a {jd_degree}'s degree; your resume shows a "
+                f"{resume_degree}'s degree, which satisfies it."
+            )
+        else:
+            resume_degree_text = f"{resume_degree}'s degree" if resume_degree else "no clearly stated degree"
+            edu_missing.append(
+                f"Degree — JD requires a {jd_degree}'s degree, but your resume shows "
+                f"{resume_degree_text}."
+            )
+
+    if jd_fields:
+        matched_fields = [f for f in jd_fields if f in resume_fields]
+        missing_fields = [f for f in jd_fields if f not in resume_fields]
+        for f in matched_fields:
+            edu_matched.append(
+                f"Field of study — JD asks for {f}, and this was found in your resume."
+            )
+        for f in missing_fields:
+            edu_missing.append(
+                f"Field of study — JD asks for {f}, but it wasn't detected in your "
+                f"resume's education section."
+            )
+
+    if not jd_degree and not jd_fields:
+        edu_matched = ["The job description doesn't state a specific degree or field of study."]
+        edu_missing = []
+
     analysis["education"] = {
         "resume": sections.get("education", ""),
         "job_requirement": jd_education,
-        "matched": (
-            ["Education requirement matched"]
-            if score >= EDUCATION_MATCH_THRESHOLD
-            else []
-        ),
-        "missing": (
-            []
-            if score >= EDUCATION_MATCH_THRESHOLD
-            else ["Education requirement"]
-        ),
+        "matched": edu_matched,
+        "missing": edu_missing,
         "similarity": score,
         "feedback": (
             "Excellent education match."
@@ -1273,9 +1310,15 @@ def analyze_resume_sections(
 
     exp_matched, exp_missing = [], []
     if required_years > 0 and candidate_years >= required_years:
-        exp_matched.append(f"{candidate_years} years experience")
+        exp_matched.append(
+            f"JD requires {required_years}+ years of experience; your resume shows "
+            f"{candidate_years} years, which meets it."
+        )
     elif required_years > 0:
-        exp_missing.append(f"{required_years}+ years experience")
+        exp_missing.append(
+            f"JD requires {required_years}+ years of experience, but your resume shows "
+            f"{candidate_years if candidate_years else 'no clearly stated'} years."
+        )
 
     analysis["experience"] = {
         "resume": resume_exp,
@@ -1531,12 +1574,17 @@ def analyze(resume_text: str, jd_text: str) -> AnalysisResult:
             field_score = 40
 
         # Semantic Similarity (20%)
-        jd_text = (
+        # NOTE: use a separate variable here — do NOT overwrite `jd_text`,
+        # since it's still needed below (e.g. experience-requirement
+        # extraction). Overwriting it previously caused the Experience
+        # score in the breakdown to silently show 100% (no years found)
+        # even when the Experience tab correctly flagged it as missing.
+        jd_edu_text = (
             f"{jd_degree} degree in "
             f"{', '.join(jd_education.get('fields', []))}"
         )
 
-        edu = semantic_similarity(resume_education, jd_text)
+        edu = semantic_similarity(resume_education, jd_edu_text)
 
         semantic_score = (edu["score"] / 100.0) * 20
 
