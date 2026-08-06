@@ -1615,12 +1615,20 @@ def analyze(resume_text: str, jd_text: str) -> AnalysisResult:
 
         # ---- Headline Job Match Score: skills + experience + education +
         #      real resume<->JD semantic similarity, weighted ----
+        # Weighted contribution of each section
+        skills_contribution = round(skills_score * 35 / 100, 1)
+        experience_contribution = round(experience_score * 20 / 100, 1)
+        education_contribution = round(education_score * 10 / 100, 1)
+        semantic_contribution = round(sim["score"] * 20 / 100, 1)
+        project_contribution = round(project_quality["score"] * 15 / 100, 1)
+
+        # Final Job Match Score
         job_match_score = round(
-            0.35 * skills_score +
-            0.20 * experience_score +
-            0.10 * education_score +
-            0.20 * sim["score"] +
-            0.15 * project_quality["score"],
+            skills_contribution +
+            experience_contribution +
+            education_contribution +
+            semantic_contribution +
+            project_contribution,
             1
         )
 
@@ -1662,12 +1670,18 @@ def analyze(resume_text: str, jd_text: str) -> AnalysisResult:
             "project_quality": {
                 "value": f"Project Quality Score: {project_quality['score']}%",
             },
-            "overall_scoring": {
-                "value": (f"Job Match Score breakdown: 35% Skills ({skills_score}%) + 20% Experience "
-                        f"({experience_score}%) + 10% Education ({education_score}%) + 20% Semantic "
-                        f"Similarity ({sim['score']}%) + 15% Project Quality ({project_quality['score']}%) "
-                        f"= {job_match_score}%"),
-            },
+            # "overall_scoring": {
+            #     "value": (
+            #         f"Job Match Score Breakdown:\n"
+            #         f"Skills: {skills_contribution}/35\n"
+            #         f"Experience: {experience_contribution}/20\n"
+            #         f"Education: {education_contribution}/10\n"
+            #         f"Semantic Similarity: {semantic_contribution}/20\n"
+            #         f"Project Quality: {project_contribution}/15\n"
+            #         f"---------------------------------\n"
+            #         f"Overall Job Match Score: {job_match_score}/100"
+            #     ),
+            # },
         }
 
     return AnalysisResult(

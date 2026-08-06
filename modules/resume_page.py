@@ -343,25 +343,36 @@ def render():
 
         # ---- Score breakdown ----
         st.markdown('<div class="section-title">Job Match Score breakdown</div>', unsafe_allow_html=True)
-        st.caption(
-            "Skills 35% · Experience 20% · Education 10% · Resume↔JD Semantic Similarity 20% · Project Quality 15%"
-        )
+        # st.caption(
+        #     "Skills 35% · Experience 20% · Education 10% · Resume↔JD Semantic Similarity 20% · Project Quality 15%"
+        # )
         sb1, sb2, sb3, sb4, sb5 = st.columns(5)
+        # Weighted contributions (do NOT affect the Job Match Score calculation)
+        skills_contrib = result.skills_score * 35 / 100
+        experience_contrib = result.experience_score * 20 / 100
+        education_contrib = result.education_score * 10 / 100
+        semantic_contrib = result.semantic_similarity["score"] * 20 / 100
+        project_contrib = result.project_analysis["score"] * 15 / 100
+
         with sb1:
-            st.write(f"🛠️ **Skills**: {result.skills_score}%")
-            st.progress(min(1.0, result.skills_score / 100))
+            st.write(f"🛠️ **Skills**: {skills_contrib:.1f}/35")
+            st.progress(skills_contrib / 35)
+
         with sb2:
-            st.write(f"💼 **Experience**: {result.experience_score}%")
-            st.progress(min(1.0, result.experience_score / 100))
+            st.write(f"💼 **Experience**: {experience_contrib:.1f}/20")
+            st.progress(experience_contrib / 20)
+
         with sb3:
-            st.write(f"🎓 **Education**: {result.education_score}%")
-            st.progress(min(1.0, result.education_score / 100))
+            st.write(f"🎓 **Education**: {education_contrib:.1f}/10")
+            st.progress(education_contrib / 10)
+
         with sb4:
-            st.write(f"🧠 **Semantic Match**: {result.semantic_similarity['score']}%")
-            st.progress(min(1.0, result.semantic_similarity['score'] / 100))
+            st.write(f"🧠 **Semantic Match**: {semantic_contrib:.1f}/20")
+            st.progress(semantic_contrib / 20)
+
         with sb5:
-            st.write(f"📁 **Project Quality**: {result.project_analysis['score']}%")
-            st.progress(min(1.0, result.project_analysis['score'] / 100))
+            st.write(f"📁 **Project Quality**: {project_contrib:.1f}/15")
+            st.progress(project_contrib / 15)
         st.caption(f"Semantic similarity method: {result.semantic_similarity['method']}")
 
         # ---- Skills comparison (categorized, not duplicated) ----
@@ -440,8 +451,8 @@ def render():
         for s in result.interview_readiness["talking_points"]:
             st.write(f"- {s}")
 
-        with st.expander("Full raw output (JSON) — structured for downstream use"):
-            st.json(result.to_dict())
+        # with st.expander("Full raw output (JSON) — structured for downstream use"):
+        #     st.json(result.to_dict())
 
         st.divider()
         if st.button("Continue to AI Interview →", type="primary"):

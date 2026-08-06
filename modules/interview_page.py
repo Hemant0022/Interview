@@ -990,27 +990,27 @@ def _render_interview():
                             level_pct,
                             text=("🎤 Audio detected — speaking" if speaking else "🎧 Mic connected — listening"),
                         )
-                        st.caption(
-                            f"RMS level: {latest_mic_rms:.4f}  •  silence threshold: {STT_SILENCE_RMS_THRESHOLD}  "
-                            f"•  frames received: {total_audio_frames_received}"
-                        )
-                        st.caption(
-                            f"Buffer building: {sound_buffer.size / STT_TARGET_SR:.2f}s  "
-                            f"•  silence run: {silence_run_seconds:.2f}s  "
-                            f"•  pause trigger: {STT_PAUSE_TRIGGER_SECONDS}s  •  max cap: {STT_MAX_CHUNK_SECONDS}s"
-                        )
-                        if last_chunk_rms is not None:
-                            st.caption(
-                                f"Last resampled chunk: {last_chunk_seconds:.2f}s  •  chunk RMS: {last_chunk_rms:.5f}  "
-                                f"•  flushed: {chunks_flushed}  •  passed silence gate & submitted: {chunks_submitted}  "
-                                f"•  worker ready: {worker.is_ready()}  •  worker busy: {worker.busy}"
-                            )
-                            st.caption(
-                                f"Raw non-empty model outputs so far: {raw_transcriptions_count}  "
-                                f"•  last raw output: {last_raw_model_output!r}"
-                            )
-                        else:
-                            st.caption("Last resampled chunk: none flushed yet (buffer still filling)")
+                        # st.caption(
+                        #     f"RMS level: {latest_mic_rms:.4f}  •  silence threshold: {STT_SILENCE_RMS_THRESHOLD}  "
+                        #     f"•  frames received: {total_audio_frames_received}"
+                        # )
+                        # st.caption(
+                        #     f"Buffer building: {sound_buffer.size / STT_TARGET_SR:.2f}s  "
+                        #     f"•  silence run: {silence_run_seconds:.2f}s  "
+                        #     f"•  pause trigger: {STT_PAUSE_TRIGGER_SECONDS}s  •  max cap: {STT_MAX_CHUNK_SECONDS}s"
+                        # )
+                        # if last_chunk_rms is not None:
+                        #     st.caption(
+                        #         f"Last resampled chunk: {last_chunk_seconds:.2f}s  •  chunk RMS: {last_chunk_rms:.5f}  "
+                        #         f"•  flushed: {chunks_flushed}  •  passed silence gate & submitted: {chunks_submitted}  "
+                        #         f"•  worker ready: {worker.is_ready()}  •  worker busy: {worker.busy}"
+                        #     )
+                        #     st.caption(
+                        #         f"Raw non-empty model outputs so far: {raw_transcriptions_count}  "
+                        #         f"•  last raw output: {last_raw_model_output!r}"
+                        #     )
+                        # else:
+                        #     st.caption("Last resampled chunk: none flushed yet (buffer still filling)")
             elif not shown_waiting_mic_msg:
                 mic_level_box.info("🎙️ Waiting for microphone connection — click **Start** above.")
                 shown_waiting_mic_msg = True
