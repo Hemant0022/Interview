@@ -30,7 +30,7 @@ def build_candidate_report(candidate: Dict) -> bytes:
 
     resume_score = candidate.get("resume_score", 0.0) or 0.0
     interview_score = candidate.get("interview_score", 0.0) or 0.0
-    overall = round(0.5 * resume_score + 0.5 * interview_score, 1) if (resume_score and interview_score) else round(resume_score or interview_score, 1)
+    overall = round( 0.3 *resume_score + 0.7 *interview_score, 1) if (resume_score and interview_score) else round(resume_score or interview_score, 1)
 
     summary_table = Table(
         [["Resume Score", "Interview Score", "Overall Score"],

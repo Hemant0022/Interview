@@ -220,6 +220,21 @@ def render():
             analysis = result.section_analysis
         st.session_state.resume_result_obj = result
         st.session_state.resume_result = result.to_dict()
+
+        # Persist to the candidate store so the Recruiter Dashboard picks up
+        # the resume score. Reuse an existing candidate_id (if the interview
+        # was already taken) so this updates the same record instead of
+        # creating a second one with only half the scores filled in.
+        candidate_id = st.session_state.get("candidate_id")
+        candidate_id = candidate_store.upsert_candidate(
+            candidate_id, result.candidate.get("name", "Candidate"),
+            {
+                "resume_score": result.job_match_score,
+                "resume_report": result.to_dict(),
+            },
+        )
+        st.session_state.candidate_id = candidate_id
+
         st.success("Done — here's how your resume compares.")
 
     if run or result is not None:
