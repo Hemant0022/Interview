@@ -530,7 +530,7 @@ class TranscriptionWorker:
 # not a raw per-frame tally — a candidate who looks left continuously for
 # 30s counts as ~6, not several hundred (one per analyzed frame).
 # ---------------------------------------------------------------------------
-VIOLATION_COOLDOWN_SECONDS = 5.0
+VIOLATION_COOLDOWN_SECONDS = 15
 
 # Every parameter we count "distraction occurred" for on the scoring
 # page, and the (behavior|objects) analysis dict + key each maps to.

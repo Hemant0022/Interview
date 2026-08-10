@@ -18,7 +18,7 @@ load_dotenv()
 
 import streamlit as st
 
-from modules import home_page, resume_page, interview_page, roadmap_page, recruiter_dashboard
+from modules import home_page, resume_page, interview_page, roadmap_page, recruiter_dashboard, about_page
 try:
     hf_token = st.secrets.get("HF_TOKEN")
 except Exception:
@@ -61,6 +61,7 @@ st.markdown(
 # ---------------------------------------------------------------------------
 NAV_TREE = {
     "🏠 Home": ["Home"],
+    "ℹ️ About": ["About"],
     "👤 Candidate": ["Resume Analysis", "AI Mock Interview", "Interview Report", "Learning Roadmap"],
     "👨‍💼 Recruiter": ["Dashboard", "Reports"],
     "⚙️ Settings": ["Settings"],
@@ -71,6 +72,7 @@ NAV_TREE = {
 # and the interview module renders both the live interview and its report.
 PAGE_MAP = {
     "Home": home_page.render,
+    "About": about_page.render,
     "Resume Analysis": resume_page.render,
     "AI Mock Interview": interview_page.render,
     "Interview Report": interview_page.render,

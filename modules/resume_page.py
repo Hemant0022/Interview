@@ -1,7 +1,7 @@
 import tempfile
 import os
 import re
-
+import math
 import streamlit as st
 
 from backend.resume_engine import analyze, load_document
@@ -236,10 +236,10 @@ def render():
         st.session_state.candidate_id = candidate_id
 
         st.success("Done — here's how your resume compares.")
-
+        st.markdown('<div class="section-title">Candidate Information</div>', unsafe_allow_html=True)
     if run or result is not None:
         # ---- Candidate profile (what the tool read from your resume) ----
-        st.markdown('<div class="section-title">What we read from your resume</div>', unsafe_allow_html=True)
+        
     
         name = result.candidate.get("name", "Unknown Candidate")
         initials = "".join([part[0].upper() for part in name.split() if part][:2])
@@ -299,18 +299,18 @@ def render():
         </div>
         """
         st.markdown(profile_html, unsafe_allow_html=True)
-        st.caption(
-            "If any of this looks wrong or missing, an applicant tracking system "
-            "will likely misread it too — worth fixing before you apply."
-        )
+        # st.caption(
+        #     "If any of this looks wrong or missing, an applicant tracking system "
+        #     "will likely misread it too — worth fixing before you apply."
+        # )
 
         # ---- Extracted text, section by section ----
         st.markdown('<div class="section-title">Your resume, section by section</div>', unsafe_allow_html=True)
-        st.caption(
-            "This is exactly what the parser pulled out of your file. If a section "
-            "below looks empty, it likely means that heading wasn't clearly labeled "
-            "in your resume — worth fixing, since an ATS will have the same trouble."
-        )
+        # st.caption(
+        #     "This is exactly what the parser pulled out of your file. If a section "
+        #     "below looks empty, it likely means that heading wasn't clearly labeled "
+        #     "in your resume — worth fixing, since an ATS will have the same trouble."
+        # )
 
     
         tabs = st.tabs([
@@ -341,20 +341,27 @@ def render():
         with tabs[5]:
             cert = analysis["certifications"]
             render_match_missing(cert["matched"], cert["missing"], cert["feedback"])
+
+        # ---- Section-wise recommendations ----
+        st.markdown('<div class="section-title">Section-wise recommendations</div>', unsafe_allow_html=True)
+        for rec in result.recommendations:
+            flag = "🔴" if rec["needs_attention"] else "🟢"
+            st.write(f"{flag} **{rec['section']}** — {rec['recommendation']}")
+
         # ---- Key scores ----
         st.markdown('<div class="section-title">Your scores</div>', unsafe_allow_html=True)
         m1, m2, m3, m4 = st.columns(4)
         with m1:
-            st.markdown(f'<div class="metric-card"><div class="value">{result.job_match_score}%</div><div class="label">Job Match Score</div></div>', unsafe_allow_html=True)
-        with m2:
             st.markdown(f'<div class="metric-card"><div class="value">{result.resume_completeness["score"]}%</div><div class="label">Resume Completeness</div></div>', unsafe_allow_html=True)
+        with m2:
+            st.markdown(f'<div class="metric-card"><div class="value">{result.job_match_score}%</div><div class="label">Job Match Score</div></div>', unsafe_allow_html=True)
         with m3:
             st.markdown(f'<div class="metric-card"><div class="value">{result.resume_structure["score"]}%</div><div class="label">Resume Structure</div></div>', unsafe_allow_html=True)
         with m4:
             st.markdown(f'<div class="metric-card"><div class="value" style="font-size:18px">{result.interview_readiness["level"]}</div><div class="label">Interview Readiness</div></div>', unsafe_allow_html=True)
 
         st.info(result.interview_readiness["summary"])
-        st.caption(f"Hiring-style read: **{result.hiring_recommendation}**")
+        # st.caption(f"Hiring-style read: **{result.hiring_recommendation}**")
 
         # ---- Score breakdown ----
         st.markdown('<div class="section-title">Job Match Score breakdown</div>', unsafe_allow_html=True)
@@ -363,11 +370,11 @@ def render():
         # )
         sb1, sb2, sb3, sb4, sb5 = st.columns(5)
         # Weighted contributions (do NOT affect the Job Match Score calculation)
-        skills_contrib = result.skills_score * 35 / 100
-        experience_contrib = result.experience_score * 20 / 100
-        education_contrib = result.education_score * 10 / 100
-        semantic_contrib = result.semantic_similarity["score"] * 20 / 100
-        project_contrib = result.project_analysis["score"] * 15 / 100
+        skills_contrib = int(math.ceil(result.skills_score * 35 / 100))
+        experience_contrib = int(math.ceil(result.experience_score * 20 / 100))
+        education_contrib = int(math.ceil(result.education_score * 10 / 100))
+        semantic_contrib = int(math.ceil(result.semantic_similarity["score"] * 20 / 100))
+        project_contrib = int(math.ceil(result.project_analysis["score"] * 15 / 100))
 
         with sb1:
             st.write(f"🛠️ **Skills**: {skills_contrib:.1f}/35")
@@ -388,31 +395,9 @@ def render():
         with sb5:
             st.write(f"📁 **Project Quality**: {project_contrib:.1f}/15")
             st.progress(project_contrib / 15)
-        st.caption(f"Semantic similarity method: {result.semantic_similarity['method']}")
+        # st.caption(f"Semantic similarity method: {result.semantic_similarity['method']}")
 
-        # ---- Skills comparison (categorized, not duplicated) ----
-        st.markdown('<div class="section-title">Skills this job is looking for</div>', unsafe_allow_html=True)
-        match_icon = {"exact": "✓", "synonym": "≈", "semantic": "~"}
-        sc1, sc2 = st.columns(2)
-        with sc1:
-            st.write("**Skills your resume already shows for this role**")
-            chips = "".join(
-                f'<span class="chip chip-good">{match_icon.get(m["match_type"], "✓")} {m["skill"]}</span>'
-                for m in result.skill_match["matched"]
-            )
-            st.markdown(chips or "_None detected yet_", unsafe_allow_html=True)
-            st.caption("✓ exact match · ≈ synonym/abbreviation match · ~ semantic match")
-        with sc2:
-            st.write("**Skills to add or highlight**")
-            st.markdown(
-                "".join(f'<span class="chip chip-bad">{s}</span>' for s in result.skill_match["missing"])
-                or "_Nothing missing — nice work_",
-                unsafe_allow_html=True,
-            )
-
-        with st.expander("Your skills, categorized"):
-            for category, skills in result.resume_skills_by_category.items():
-                st.write(f"**{category}**: " + ", ".join(skills))
+        
 
         # ---- Resume completeness & structure ----
         st.markdown('<div class="section-title">Resume completeness & structure</div>', unsafe_allow_html=True)
@@ -449,11 +434,7 @@ def render():
             for w in result.strengths_weaknesses["weaknesses"]:
                 st.error(w)
 
-        # ---- Section-wise recommendations ----
-        st.markdown('<div class="section-title">Section-wise recommendations</div>', unsafe_allow_html=True)
-        for rec in result.recommendations:
-            flag = "🔴" if rec["needs_attention"] else "🟢"
-            st.write(f"{flag} **{rec['section']}** — {rec['recommendation']}")
+        
 
         # ---- Why this score (explainability) ----
         st.markdown('<div class="section-title">Why you got this score</div>', unsafe_allow_html=True)

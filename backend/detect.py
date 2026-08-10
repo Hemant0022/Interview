@@ -1095,12 +1095,12 @@ def process_frame(frame):
         # ================================================================
         if _state["neutral_eyes_skin_ratio"] is not None and eyes_skin_ratio is not None:
             if (_state["neutral_eyes_skin_ratio"] - eyes_skin_ratio) >= OCCLUSION_SKIN_DROP_THRESHOLD:
-                analysis["objects"]["object_on_eyes"] = True
-                analysis["objects"]["object_on_face"] = True
+                analysis["objects"]["object_on_eyes"] = False
+                analysis["objects"]["object_on_face"] = False
 
         if _state["neutral_mouth_skin_ratio"] is not None and mouth_skin_ratio is not None:
             if (_state["neutral_mouth_skin_ratio"] - mouth_skin_ratio) >= OCCLUSION_SKIN_DROP_THRESHOLD:
-                analysis["objects"]["object_on_face"] = True
+                analysis["objects"]["object_on_face"] = False
 
         # ---- Smooth yaw/pitch with an EMA so one noisy solvePnP result
         # (only 6 sparse points) doesn't flip the direction by itself.
