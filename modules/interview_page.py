@@ -45,24 +45,20 @@ guarantee `LatestFrameCamera` gave you.
 
 Why the earlier freeze was happening
 --------------------------------------
-`load_whisper_model()` used to be called directly in the main render
-thread, right before the loop started — a slow blocking call the first
-time, freezing the whole page until it finished. It's now loaded
-*inside* `TranscriptionWorker`'s own background thread, so the render
-loop never waits on it: camera/tables render immediately, and live
-transcription switches on automatically once the model finishes
-loading in the background.
+The speech model load used to happen directly in the main render thread,
+right before the loop started — a slow blocking call the first time,
+freezing the whole page until it finished. It is now loaded *inside*
+`TranscriptionWorker`'s own background thread, so the render loop never
+waits on it: camera/tables render immediately, and live transcription
+switches on automatically once SenseVoice finishes loading.
 
 Audio/transcription pipeline (ported from voice.py + transcript_utils.py)
 ---------------------------------------------------------------------------
-Per your voice.py, this now uses Hugging Face `transformers`
-(`WhisperProcessor` + `WhisperForConditionalGeneration`, model
-"openai/whisper-small") instead of faster-whisper, with the same
-resample-to-mono-16kHz-via-av, RMS silence gate, and greedy-decode
-`transcribe()` approach. `append_transcript` is imported directly from
-`backend.transcript_utils` (the dedup-aware version — skips appending a
-segment that's already a substring/suffix of what's there) instead of a
-local helper.
+This module now uses a single speech backend: <SenseVoice> via funasr.
+Audio is resampled to mono 16kHz with `av`, silence-gated by RMS
+threshold, and decoded chunk-by-chunk. `append_transcript` is imported
+from `backend.transcript_utils` (the dedup-aware version — trims overlap
+at chunk boundaries) instead of a local helper.
 
 One bug fixed while porting voice.py's flush logic: it reset
 `sound_buffer` to empty on every loop tick (since its flush interval
@@ -73,13 +69,10 @@ would never actually fire. Here, the buffer is only cleared once it
 has genuinely reached the minimum size; otherwise it keeps accumulating
 across iterations.
 
-Trade-off worth knowing: `transformers`' `model.generate()` is
-noticeably slower on CPU than faster-whisper's CTranslate2 backend for
-the same model size. `TranscriptionWorker` drops a new chunk if it's
-still busy transcribing the last one (rather than queuing/lagging), so
-on a CPU-only server you may end up with fewer, larger chunks
-transcribed rather than a chunk being missed outright. If you have a
-GPU available this is much less of a concern.
+Trade-off worth knowing: if `TranscriptionWorker` is still busy with the
+last chunk, it drops the next chunk rather than queueing and adding lag.
+On CPU-only servers, this can produce fewer, larger transcribed chunks;
+on GPU-backed deployments this effect is usually reduced.
 
 Layout
 ------
@@ -100,7 +93,6 @@ that gets scored on the report page.
 """
 import queue
 import os
-import json
 import time
 import threading
 
@@ -109,16 +101,6 @@ import numpy as np
 import streamlit as st
 import torch
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
-from transformers import WhisperForConditionalGeneration, WhisperProcessor
-try:
-    from faster_whisper import WhisperModel
-except Exception:
-    WhisperModel = None
-try:
-    import vosk
-    vosk.SetLogLevel(-1)  # vosk logs raw Kaldi debug lines to stderr by default; silence them
-except Exception:
-    vosk = None
 try:
     from funasr import AutoModel as _FunASRAutoModel
     from funasr.utils.postprocess_utils import rich_transcription_postprocess as _sensevoice_postprocess
@@ -159,13 +141,9 @@ def stop_session():
 
 
 # ---------------------------------------------------------------------------
-# Live speech-to-text — ported from voice.py
+# Live speech-to-text — SenseVoice only
 # ---------------------------------------------------------------------------
-# Testing Whisper Turbo per your request. Override without touching code:
-# set STT_MODEL_NAME=small.en (faster-whisper) if Turbo is too slow on CPU.
-STT_MODEL_NAME = os.getenv("STT_MODEL_NAME", "large-v3-turbo")
-STT_TRANSFORMERS_MODEL_NAME = os.getenv("STT_TRANSFORMERS_MODEL_NAME", "openai/whisper-large-v3-turbo")
-STT_TARGET_SR = 16000                        # Whisper expects 16kHz audio
+STT_TARGET_SR = 16000                        # SenseVoice pipeline uses 16kHz mono audio
 STT_TRANSCRIBE_INTERVAL_SECONDS = 0.0        # minimum time between flush attempts
 STT_MIN_CHUNK_SECONDS = float(os.getenv("STT_MIN_CHUNK_SECONDS", "0.5"))  # only flush once buffer has at least this much audio
 # STT_SILENCE_RMS_THRESHOLD = 0.002            # below this average energy, treat chunk as silence
@@ -200,48 +178,18 @@ STT_CHUNK_OVERLAP_SECONDS = float(os.getenv("STT_CHUNK_OVERLAP_SECONDS", str(rou
 STT_PAUSE_TRIGGER_SECONDS = float(os.getenv("STT_PAUSE_TRIGGER_SECONDS", "0.35"))
 STT_MAX_CHUNK_SECONDS = float(os.getenv("STT_MAX_CHUNK_SECONDS", "4.0"))
 
-# Which STT backend to use. "auto" tries them in priority order and
-# silently falls through to the next one if a given engine isn't
-# installed/available — "sensevoice" first (generally the best accuracy/
-# speed tradeoff of the four here), then vosk (cheapest to run — no GPU,
-# fully offline once its model folder is on disk), then faster-whisper,
-# then the transformers fallback. Set STT_ENGINE to pin a single engine
-# instead (useful for testing, or to force one over another on a box
-# that has multiple installed). Pinned to "sensevoice" per current setup.
-STT_ENGINE = os.getenv("STT_ENGINE", "sensevoice").lower()  # "sensevoice" | "vosk" | "faster_whisper" | "transformers" | "auto"
-
 # SenseVoice (via funasr) model id — auto-downloaded from ModelScope/HF
-# on first run and cached locally after that, same "slow first time only"
-# tradeoff as the Whisper models. "iic/SenseVoiceSmall" is the only
+# on first run and cached locally after that. "iic/SenseVoiceSmall" is the only
 # public SenseVoice checkpoint at time of writing.
 SENSEVOICE_MODEL_NAME = os.getenv("SENSEVOICE_MODEL_NAME", "iic/SenseVoiceSmall")
-SENSEVOICE_LANGUAGE = os.getenv("SENSEVOICE_LANGUAGE", "en")  # this app is English-only, matching the other engines
+SENSEVOICE_LANGUAGE = os.getenv("SENSEVOICE_LANGUAGE", "en")  # this app is English-only
 
-# Path to an unzipped Vosk model directory, e.g. one of the models at
-# https://alphacephei.com/vosk/models (the "small" en-us model is ~40MB
-# and good enough for interview-quality audio; the larger "en-us-0.22"
-# model trades size/RAM for better accuracy). Download once and point
-# this at the extracted folder — Vosk does not fetch models itself.
-#
-# Default resolves relative to THIS FILE, not the process's current
-# working directory — a bare relative default like "models/..." would
-# silently point somewhere different depending on where `streamlit run`
-# happens to be launched from. Set VOSK_MODEL_PATH explicitly to
-# override with an absolute path if you keep the model elsewhere.
-VOSK_MODEL_PATH = os.getenv(
-    "VOSK_MODEL_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "vosk-model-small-en-us-0.15"),
-)
-VOSK_SAMPLE_RATE = STT_TARGET_SR  # the en-us Vosk models above are trained at 16kHz, matching our pipeline
-
-_whisper_singleton_lock = threading.Lock()
-_whisper_singleton = {"backend": None}
+_sensevoice_singleton_lock = threading.Lock()
+_sensevoice_singleton = {"backend": None}
 
 
 def _load_stt_backend_once():
-    """Loads (once per server process) and caches whichever STT backend
-    wins the STT_ENGINE cascade — SenseVoice, Vosk, faster-whisper, or
-    transformers.
+    """Loads (once per server process) and caches the SenseVoice backend.
 
     Deliberately NOT an `st.cache_resource` function: those are meant to
     be called from the main Streamlit thread, and calling one from a
@@ -250,78 +198,24 @@ def _load_stt_backend_once():
     simpler and completely safe to call from TranscriptionWorker's
     background thread.
     """
-    with _whisper_singleton_lock:
-        if _whisper_singleton["backend"] is not None:
-            return _whisper_singleton["backend"]
+    with _sensevoice_singleton_lock:
+        if _sensevoice_singleton["backend"] is not None:
+            return _sensevoice_singleton["backend"]
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        if _FunASRAutoModel is None:
+            raise RuntimeError("SenseVoice backend unavailable: funasr is not installed.")
 
-        engine_order = (
-            [STT_ENGINE] if STT_ENGINE in ("sensevoice", "vosk", "faster_whisper", "transformers")
-            else ["sensevoice", "vosk", "faster_whisper", "transformers"]
+        sv_device = "cuda:0" if device == "cuda" else "cpu"
+        model = _FunASRAutoModel(
+            model=SENSEVOICE_MODEL_NAME,
+            trust_remote_code=True,
+            device=sv_device,
+            disable_update=True,
+            disable_pbar=True,
         )
-        skip_reasons = []
-
-        for engine in engine_order:
-            if engine == "sensevoice":
-                if _FunASRAutoModel is None:
-                    skip_reasons.append("sensevoice: funasr package not installed (pip install funasr)")
-                    continue
-                sv_device = "cuda:0" if device == "cuda" else "cpu"
-                model = _FunASRAutoModel(
-                    model=SENSEVOICE_MODEL_NAME,
-                    trust_remote_code=True,
-                    device=sv_device,
-                    disable_update=True,
-                    disable_pbar=True,
-                )
-                _whisper_singleton["backend"] = {"kind": "sensevoice", "model": model}
-                break
-
-            elif engine == "vosk":
-                if vosk is None:
-                    skip_reasons.append("vosk: package not installed (pip install vosk)")
-                    continue
-                if not os.path.isdir(VOSK_MODEL_PATH):
-                    skip_reasons.append(
-                        f"vosk: model folder not found at VOSK_MODEL_PATH={VOSK_MODEL_PATH!r} "
-                        "(download a model from https://alphacephei.com/vosk/models and unzip it there)"
-                    )
-                    continue
-                model = vosk.Model(VOSK_MODEL_PATH)
-                _whisper_singleton["backend"] = {"kind": "vosk", "model": model}
-                break
-
-            elif engine == "faster_whisper":
-                if WhisperModel is None:
-                    skip_reasons.append("faster_whisper: package not installed")
-                    continue
-                compute_type = "float16" if device == "cuda" else "int8"
-                model = WhisperModel(STT_MODEL_NAME, device=device, compute_type=compute_type)
-                _whisper_singleton["backend"] = {
-                    "kind": "faster_whisper",
-                    "model": model,
-                }
-                break
-
-            elif engine == "transformers":
-                processor = WhisperProcessor.from_pretrained(STT_TRANSFORMERS_MODEL_NAME)
-                model = WhisperForConditionalGeneration.from_pretrained(STT_TRANSFORMERS_MODEL_NAME).to(device)
-                model.eval()
-                _whisper_singleton["backend"] = {
-                    "kind": "transformers",
-                    "processor": processor,
-                    "model": model,
-                    "device": device,
-                }
-                break
-
-        if _whisper_singleton["backend"] is None:
-            raise RuntimeError(
-                f"No STT backend available for STT_ENGINE={STT_ENGINE!r}. " + "; ".join(skip_reasons)
-            )
-
-        return _whisper_singleton["backend"]
+        _sensevoice_singleton["backend"] = {"kind": "sensevoice", "model": model}
+        return _sensevoice_singleton["backend"]
 
 
 def _make_resampler() -> av.AudioResampler:
@@ -347,72 +241,29 @@ def _format_elapsed(seconds) -> str:
 
 
 def _transcribe_chunk(audio_array: np.ndarray, backend) -> str:
-    """Greedy-decode transcription via transformers — matches voice.py's
-    transcribe() (translation option omitted; this app is English-only)."""
+    """Transcribes one chunk with SenseVoice (English)."""
     if audio_array.size == 0:
         return ""
 
-    if backend["kind"] == "sensevoice":
-        # Same independent-chunk assumption as the other branches — no
-        # cross-chunk context, one decode per silence-gated segment.
-        # funasr's AutoModel.generate accepts a raw mono float32 array at
-        # the model's expected sample rate directly (no file round-trip
-        # needed). We skip SenseVoice's own VAD model at load time since
-        # our own RMS gate + fixed chunk size already does that job.
-        result = backend["model"].generate(
-            input=audio_array,
-            cache={},
-            language=SENSEVOICE_LANGUAGE,
-            use_itn=True,
-            batch_size_s=60,
-        )
-        if not result:
-            return ""
-        raw_text = result[0].get("text", "")
-        text = _sensevoice_postprocess(raw_text) if _sensevoice_postprocess else raw_text
-        return text.strip()
-
-    if backend["kind"] == "vosk":
-        # Each chunk is already an independent, silence-gated segment
-        # (same design as the faster_whisper/transformers branches below,
-        # which also decode each chunk with no cross-chunk context), so a
-        # fresh, stateless KaldiRecognizer per chunk is simpler and just
-        # as accurate here as keeping one recognizer alive across chunks.
-        pcm16 = np.clip(audio_array * 32768.0, -32768, 32767).astype(np.int16).tobytes()
-        recognizer = vosk.KaldiRecognizer(backend["model"], VOSK_SAMPLE_RATE)
-        recognizer.SetWords(False)
-        recognizer.AcceptWaveform(pcm16)
-        result = json.loads(recognizer.FinalResult())
-        return result.get("text", "").strip()
-
-    if backend["kind"] == "faster_whisper":
-        segments, _info = backend["model"].transcribe(
-            audio_array,
-            language="en",
-            beam_size=1,
-            condition_on_previous_text=False,
-            vad_filter=False,
-        )
-        text = " ".join(segment.text.strip() for segment in segments).strip()
-        return text
-
-    processor = backend["processor"]
-    model = backend["model"]
-    device = backend["device"]
-    inputs = processor(audio_array, sampling_rate=STT_TARGET_SR, return_tensors="pt")
-    input_features = inputs["input_features"].to(device)
-    with torch.no_grad():
-        predicted_ids = model.generate(
-            input_features,
-            max_new_tokens=200,
-            num_beams=1,
-        )
-    return processor.batch_decode(predicted_ids, skip_special_tokens=True)[0].strip()
+    # Decode each silence-gated chunk independently and append with
+    # transcript_utils overlap trimming on the text side.
+    result = backend["model"].generate(
+        input=audio_array,
+        cache={},
+        language=SENSEVOICE_LANGUAGE,
+        use_itn=True,
+        batch_size_s=60,
+    )
+    if not result:
+        return ""
+    raw_text = result[0].get("text", "")
+    text = _sensevoice_postprocess(raw_text) if _sensevoice_postprocess else raw_text
+    return text.strip()
 
 
 class TranscriptionWorker:
     """Runs entirely on its own background thread — INCLUDING loading the
-    Whisper model itself. The main render loop never blocks on this
+    SenseVoice model itself. The main render loop never blocks on this
     class for anything: it only ever calls the cheap, non-blocking
     `submit_chunk` / `get_latest_text` / `is_ready`."""
 
@@ -741,7 +592,7 @@ def _render_interview():
         st.subheader("📡 Attention, Behavior & Objects")
         monitoring_box = st.empty()
 
-    # The worker loads Whisper itself, on its own thread — created once
+    # The worker loads SenseVoice itself, on its own thread — created once
     # and reused across reruns via session_state, so the model is only
     # ever loaded a single time per server process.
     if st.session_state.transcription_worker is None:
@@ -769,7 +620,7 @@ def _render_interview():
     # audio is reaching the server at all vs. loud enough to count as
     # speech (RMS vs. STT_SILENCE_RMS_THRESHOLD). If the meter shows
     # "audio detected" but transcripts still aren't appearing, the
-    # problem is downstream in Whisper/transcription — not the mic.
+    # problem is downstream in speech transcription — not the mic.
     last_mic_level_update = 0.0
     latest_mic_rms = 0.0
     total_audio_frames_received = 0
@@ -798,13 +649,8 @@ def _render_interview():
                     transcript_status.error(
                         f"❌ Speech model failed to load: {worker_load_error}\n\n"
                         "Camera and detection above are unaffected — this only blocks transcription. "
-                        f"Engine order tried (STT_ENGINE={STT_ENGINE!r}): sensevoice → vosk → faster-whisper → transformers. "
-                        "Common causes: `funasr` not installed or SenseVoice model not yet downloaded/cached "
-                        "(needs internet access on first run), Vosk model folder missing at VOSK_MODEL_PATH "
-                        "(download from https://alphacephei.com/vosk/models and unzip it there), no internet "
-                        f"access to huggingface.co to download \"{STT_MODEL_NAME}\" (faster-whisper) / "
-                        f"\"{STT_TRANSFORMERS_MODEL_NAME}\" (transformers fallback) the first time, or a "
-                        "missing/incompatible `funasr`/`vosk`/`faster-whisper`/`transformers`/`torch` install."
+                        "This build uses SenseVoice only. Common causes: `funasr` not installed, "
+                        "first-run model download failed (no internet), or an incompatible `torch`/`funasr` install."
                     )
                     last_worker_ready_shown = "failed"
             elif worker_ready != last_worker_ready_shown:
@@ -953,7 +799,7 @@ def _render_interview():
 
             # ---- Audio: pull pending mic frames (cheap) and hand a
             # chunk off to the background worker every couple seconds.
-            # Whisper itself runs on the worker's own thread — this loop
+            # SenseVoice runs on the worker's own thread — this loop
             # never waits on it, so video and mic stay live together.
             got_audio = False
             if media_ctx.audio_receiver is not None:

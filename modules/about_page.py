@@ -68,10 +68,9 @@ def render():
             "AI Mock Interview",
             "Live voice interview with webcam-based monitoring",
             """
-            The interview page is built around <b>WebRTC</b> for browser audio/video capture, then combines several models:
-            <b>SenseVoice</b> via <b>funasr</b> is the primary speech-to-text backend (<b>iic/SenseVoiceSmall</b>),
-            with fallbacks to <b>Vosk</b> (<b>vosk-model-small-en-us-0.15</b>), <b>faster-whisper</b>, and a
-            <b>Transformers Whisper</b> fallback (<b>openai/whisper-large-v3-turbo</b>).
+            The interview page is built around <b>WebRTC</b> for browser audio/video capture.
+            Speech-to-text uses only <b>SenseVoice</b> via <b>funasr</b> with
+            model <b>iic/SenseVoiceSmall</b>.
             """,
             accent="#12B76A",
         )

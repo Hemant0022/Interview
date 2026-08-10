@@ -10,8 +10,6 @@ opencv-python-headless
 mediapipe==0.10.21
 ultralytics
 
-faster-whisper
-ctranslate2
 av
 torch
 torchaudio
