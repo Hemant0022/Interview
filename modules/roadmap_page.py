@@ -123,7 +123,7 @@ def render():
 
     if not interview_report:
         st.info(
-            "Complete the **AI Mock Interview** first — this roadmap is built from how you actually "
+            "Complete the **Mock Interview** first — this roadmap is built from how you actually "
             "answered, so it can give you specific, real feedback instead of generic tips. "
             "(Resume gaps are already covered on the **Resume Analysis** page.)"
         )
@@ -217,33 +217,33 @@ def render():
                 )
                 st.caption(links)
 
-    st.divider()
+    
 
-    # ---------------- Question-by-question feedback ----------------
-    st.markdown("### 📋 Question-by-question feedback")
-    st.caption("Every answer from your interview, with the specific scores and coaching notes behind them.")
-    if not evaluations:
-        st.caption("_No answers recorded._")
-    for i, e in enumerate(evaluations, start=1):
-        overall = e.get("overall", 0)
-        flag = "🔴" if overall < 60 else ("🟡" if overall < 75 else "🟢")
-        with st.expander(f"{flag} Q{i}: {e.get('question', '')} — {overall}%"):
-            scores = e.get("scores", {})
-            cols = st.columns(len(scores) or 1)
-            for col, (dim, val) in zip(cols, scores.items()):
-                col.metric(dim.replace("_", " ").title(), f"{val}%")
-            if e.get("transcript"):
-                st.caption(f"Your answer: “{e['transcript'][:500]}{'…' if len(e['transcript']) > 500 else ''}”")
-            if e.get("feedback"):
-                st.write(f"**Feedback:** {e['feedback']}")
-            if e.get("strengths"):
-                st.write("**What worked:**")
-                for s in e["strengths"]:
-                    st.write(f"- {s}")
-            if e.get("improvements"):
-                st.write("**What to change:**")
-                for imp in e["improvements"]:
-                    st.write(f"- {imp}")
+    # # ---------------- Question-by-question feedback ----------------
+    # st.markdown("### 📋 Question-by-question feedback")
+    # st.caption("Every answer from your interview, with the specific scores and coaching notes behind them.")
+    # if not evaluations:
+    #     st.caption("_No answers recorded._")
+    # for i, e in enumerate(evaluations, start=1):
+    #     overall = e.get("overall", 0)
+    #     flag = "🔴" if overall < 60 else ("🟡" if overall < 75 else "🟢")
+    #     with st.expander(f"{flag} Q{i}: {e.get('question', '')} — {overall}%"):
+    #         scores = e.get("scores", {})
+    #         cols = st.columns(len(scores) or 1)
+    #         for col, (dim, val) in zip(cols, scores.items()):
+    #             col.metric(dim.replace("_", " ").title(), f"{val}%")
+    #         if e.get("transcript"):
+    #             st.caption(f"Your answer: “{e['transcript'][:500]}{'…' if len(e['transcript']) > 500 else ''}”")
+    #         if e.get("feedback"):
+    #             st.write(f"**Feedback:** {e['feedback']}")
+    #         if e.get("strengths"):
+    #             st.write("**What worked:**")
+    #             for s in e["strengths"]:
+    #                 st.write(f"- {s}")
+    #         if e.get("improvements"):
+    #             st.write("**What to change:**")
+    #             for imp in e["improvements"]:
+    #                 st.write(f"- {imp}")
 
     st.divider()
     st.markdown("### AI Generated Learning Plan")

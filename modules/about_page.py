@@ -41,7 +41,7 @@ def render():
         ">
             <div style="font-size:16px; font-weight:700; color:#0F172A; margin-bottom:4px;">What this platform does</div>
             <div style="font-size:14px; color:#334155; line-height:1.6;">
-                The app combines resume screening, an AI mock interview, interview scoring, and a learning roadmap into one flow.
+                The app combines resume screening, an mock interview, interview scoring, and a learning roadmap into one flow.
                 Each page uses a separate set of models or rules, and most features fall back gracefully if an API key or model package is missing.
             </div>
         </div>
@@ -65,7 +65,7 @@ def render():
         )
     with c2:
         _section_card(
-            "AI Mock Interview",
+            "Mock Interview",
             "Live voice interview with webcam-based monitoring",
             """
             The interview page is built around <b>WebRTC</b> for browser audio/video capture.

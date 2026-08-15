@@ -54,12 +54,27 @@ def render():
     selected_id = ranked.loc[ranked["Candidate"] == selected_name, "id"].iloc[0]
     record = candidate_store.get_candidate(selected_id)
 
-    c1, c2, c3, c4 = st.columns(4)
+    overall = candidate_store.overall_score(record)
+    recommendation = candidate_store.recommendation_for(overall)
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Resume", f"{record.get('resume_score', 0.0) or 0.0}%")
     c2.metric("Interview", f"{record.get('interview_score', 0.0) or 0.0}%")
     agg = (record.get("interview_report") or {}).get("aggregate_scores", {})
     c3.metric("Technical", f"{agg.get('technical_accuracy', 0.0)}%")
     c4.metric("Communication", f"{agg.get('communication', 0.0)}%")
+    c5.metric("Overall", f"{overall}%")
+    c6.metric("Recommendation", recommendation)
+
+    # Resume score = Job Match 50% + Completeness 25% + Structure 25%
+    # (skills/project quality aren't weighted separately -- Job Match
+    # already folds them in). Break it down here when we have it.
+    resume_overall = (record.get("resume_report") or {}).get("overall_resume_score")
+    if resume_overall:
+        with st.expander("Resume score breakdown"):
+            st.write(f"- Job Match Score: {resume_overall['job_match_score']}% (weight 50%)")
+            st.write(f"- Completeness: {resume_overall['completeness_score']}% (weight 25%)")
+            st.write(f"- Structure: {resume_overall['structure_score']}% (weight 25%)")
 
     if st.button("📄 Generate PDF Report", type="primary"):
         pdf_bytes = report_pdf.build_candidate_report(record)

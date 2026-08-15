@@ -18,7 +18,7 @@ load_dotenv()
 
 import streamlit as st
 
-from modules import home_page, resume_page, interview_page, roadmap_page, recruiter_dashboard, about_page
+from modules import home_page, resume_page, interview_page, roadmap_page, recruiter_dashboard
 try:
     hf_token = st.secrets.get("HF_TOKEN")
 except Exception:
@@ -62,8 +62,8 @@ st.markdown(
 NAV_TREE = {
     "🏠 Home": ["Home"],
     "ℹ️ About": ["About"],
-    "👤 Candidate": ["Resume Analysis", "AI Mock Interview", "Interview Report", "Learning Roadmap"],
-    "👨‍💼 Recruiter": ["Dashboard", "Reports"],
+    "👤 Candidate": ["Resume Analysis", "Mock Interview", "Interview Report", "Learning Roadmap"],
+    "👨‍💼 Recruiter": ["Dashboard"],
     "⚙️ Settings": ["Settings"],
 }
 
@@ -72,20 +72,19 @@ NAV_TREE = {
 # and the interview module renders both the live interview and its report.
 PAGE_MAP = {
     "Home": home_page.render,
-    "About": about_page.render,
     "Resume Analysis": resume_page.render,
-    "AI Mock Interview": interview_page.render,
+    "Mock Interview": interview_page.render,
     "Interview Report": interview_page.render,
     "Learning Roadmap": roadmap_page.render,
     "Dashboard": recruiter_dashboard.render,
-    "Reports": recruiter_dashboard.render,
-    "Settings": None,  # handled inline below
+    
+    "Settings": None,  # handled inline belo
 }
 
 if "current_page" not in st.session_state:
     st.session_state.current_page = "Home"
 
-# Allow other pages to programmatically navigate (e.g. "Continue to AI Mock Interview →")
+# Allow other pages to programmatically navigate (e.g. "Continue to Mock Interview →")
 if "nav_target" in st.session_state:
     st.session_state.current_page = st.session_state.pop("nav_target")
 
@@ -107,7 +106,7 @@ with st.sidebar:
 # webcam thread, exactly like the old face.py's "leaving Live Monitoring"
 # guard — prevents an orphaned camera thread running in the background.
 # ---------------------------------------------------------------------------
-if st.session_state.current_page != "AI Mock Interview" and st.session_state.get("camera_running"):
+if st.session_state.current_page != "Mock Interview" and st.session_state.get("camera_running"):
     interview_page.stop_session()
 
 # ---------------------------------------------------------------------------

@@ -74,6 +74,11 @@ def list_candidates() -> List[Dict]:
 
 
 def overall_score(record: Dict) -> float:
+    """50/50 average of resume_score and interview_score when both exist,
+    otherwise whichever one is present. `resume_score` here is the
+    resume-side Overall Resume Score computed in resume_engine.py
+    (job match 50% + completeness 25% + structure 25%), not the raw
+    job-match-vs-JD score -- see resume_overall_score()."""
     resume_score = record.get("resume_score", 0.0) or 0.0
     interview_score = record.get("interview_score", 0.0) or 0.0
     if resume_score and interview_score:

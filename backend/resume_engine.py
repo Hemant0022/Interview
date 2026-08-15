@@ -587,6 +587,105 @@ def classify_resume_skills(resume_text: str) -> Dict[str, List[str]]:
 
 
 # ---------------------------------------------------------------------------
+# 5.5 DOCUMENT TYPE GATE — is this even a resume?
+# ---------------------------------------------------------------------------
+# Runs BEFORE the full analyze() pipeline (see resume_page.py) so a random
+# PDF/DOCX -- a job description accidentally uploaded in the resume slot, an
+# invoice, a report, an academic paper, a blank template, a scanned image
+# with no extractable text -- gets a clear "this isn't a resume" message
+# instead of silently limping through the whole analysis and producing a
+# confusing, near-meaningless score built from garbage extraction.
+#
+# Deliberately SIGNAL-COUNTING rather than keyword-blocklisting: a
+# blocklist is trivially wrong on real resumes that happen to mention
+# "invoice processing" as a skill, "chapter lead" as a title, etc. A
+# genuine resume reliably has SEVERAL of the signals below at once (its
+# own contact info, a name, section headers, skills, education/experience);
+# almost no other document type has more than one or two by coincidence.
+RESUME_MIN_SIGNAL_SCORE = 3    # how many of the non-length signals below must fire
+RESUME_MIN_WORD_COUNT = 40     # shorter than this, there's nothing to analyze
+RESUME_MAX_WORD_COUNT = 20000  # longer than this, this isn't a 1-3 page resume
+
+
+def classify_document(text: str) -> Dict:
+    """
+    Scores how "resume-shaped" `text` is and returns:
+        {
+            "is_resume": bool,
+            "score": int,             # how many signals fired
+            "max_score": int,         # signals checked
+            "signals": {name: bool},  # which specific signals fired, for debugging/explainability
+            "reason": str,            # one human-readable line, safe to show in the UI
+        }
+    """
+    stripped = (text or "").strip()
+    word_count = len(re.findall(r"\S+", stripped))
+
+    if word_count < RESUME_MIN_WORD_COUNT:
+        return {
+            "is_resume": False,
+            "score": 0,
+            "max_score": 0,
+            "signals": {},
+            "reason": (
+                "The uploaded file has almost no readable text in it — it may be a scanned "
+                "image, a blank template, or an empty/corrupted file."
+            ),
+        }
+
+    sections = segment_resume_sections(stripped)
+    resume_section_hits = [
+        k for k in ("education", "experience", "skills", "projects", "certifications", "summary")
+        if k in sections
+    ]
+
+    candidate = extract_candidate_profile(stripped)
+    has_contact = candidate["email"] != "Not found" or candidate["phone"] != "Not found"
+    has_name = candidate["name"] not in ("Unknown Candidate", "", None)
+    skills_found = find_skills(stripped)
+    has_education_signal = candidate["highest_education"] != "Not specified" or "education" in sections
+    has_experience_signal = candidate["years_experience"] is not None or "experience" in sections
+    plausible_length = RESUME_MIN_WORD_COUNT <= word_count <= RESUME_MAX_WORD_COUNT
+
+    signals = {
+        "has_2plus_resume_sections": len(resume_section_hits) >= 2,
+        "has_contact_info": has_contact,
+        "has_candidate_name": has_name,
+        "has_recognizable_skills": len(skills_found) >= 3,
+        "has_education_or_degree": has_education_signal,
+        "has_experience_or_years": has_experience_signal,
+    }
+    score = sum(1 for v in signals.values() if v)
+    is_resume = plausible_length and score >= RESUME_MIN_SIGNAL_SCORE
+
+    if is_resume:
+        reason = "Looks like a resume."
+    elif not plausible_length and word_count > RESUME_MAX_WORD_COUNT:
+        reason = (
+            "This file is far longer than a typical resume — it looks like a different kind "
+            "of document (e.g. a report, book, or manual), not a resume."
+        )
+    elif not resume_section_hits and not has_contact and not skills_found:
+        reason = (
+            "This doesn't look like a resume — no resume sections (Education, Experience, "
+            "Skills, etc.), contact details, or recognizable skills were found in it."
+        )
+    else:
+        reason = (
+            "This doesn't look like a complete resume — too few resume-like signals "
+            "(sections, contact info, skills, education/experience) were found in it."
+        )
+
+    return {
+        "is_resume": is_resume,
+        "score": score,
+        "max_score": len(signals),
+        "signals": signals,
+        "reason": reason,
+    }
+
+
+# ---------------------------------------------------------------------------
 # 6. SEMANTIC SKILL MATCHING
 #    A JD skill counts as covered if:
 #      a) it's an exact/alias surface-form match in the resume (find_skills), or
@@ -915,6 +1014,60 @@ def analyze_projects(sections: Dict[str, str], jd_skills: List[str]) -> Dict:
         "has_quantified_impact": has_metrics,
         "relevant_tech_mentioned": relevant_tech,
         "action_verbs_used": verbs_used,
+        "feedback": feedback,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 10.5 OVERALL RESUME SCORE
+# ---------------------------------------------------------------------------
+# Headline "how good is this resume, for this job" score. Combines:
+#   - job_match_score (50%) -- fit against this specific JD
+#   - completeness (25%)    -- are the expected sections/contact info there
+#   - structure (25%)       -- is it well-formatted/parseable
+#
+# Skills and project quality are deliberately NOT weighted in here as their
+# own factors: job_match_score's own breakdown already accounts for both
+# (skills 35% + project quality 15% of that breakdown), so folding them in
+# again here would double-count the same signal. Because it depends on
+# job_match_score, this is JD-dependent -- unlike resume_completeness_score/
+# resume_structure_score, it can't be computed from the resume alone.
+RESUME_OVERALL_SCORE_WEIGHTS = {
+    "job_match": 0.50,
+    "completeness": 0.25,
+    "structure": 0.25,
+}
+
+
+def resume_overall_score(job_match_score: float, completeness_score: float, structure_score: float) -> Dict:
+    """
+    Headline overall resume score, on a 0-100 scale. Call this after
+    job_match_score/completeness/structure have all been computed against
+    a specific JD (e.g. from inside analyze()).
+    """
+    overall = round(
+        RESUME_OVERALL_SCORE_WEIGHTS["job_match"] * job_match_score +
+        RESUME_OVERALL_SCORE_WEIGHTS["completeness"] * completeness_score +
+        RESUME_OVERALL_SCORE_WEIGHTS["structure"] * structure_score,
+        1,
+    )
+
+    feedback = []
+    if job_match_score < 60:
+        feedback.append("Job match is the biggest lever here -- see the Job Match Score breakdown for what to improve.")
+    if completeness_score < 70:
+        feedback.append("Some expected sections or contact details are missing -- see the Completeness feedback.")
+    if structure_score < 70:
+        feedback.append("Formatting/parseability could be improved -- see the Structure feedback.")
+    if not feedback:
+        feedback.append("Strong resume overall -- well matched to this role, complete, and well structured.")
+
+    return {
+        "score": overall,
+        "weights": RESUME_OVERALL_SCORE_WEIGHTS,
+        "job_match_score": job_match_score,
+        "completeness_score": completeness_score,
+        "structure_score": structure_score,
         "feedback": feedback,
     }
 
@@ -1405,15 +1558,21 @@ def get_education_rank(education_str: str) -> int:
 # ---------------------------------------------------------------------------
 # 14. INTERVIEW READINESS + STRENGTHS/WEAKNESSES
 # ---------------------------------------------------------------------------
-def interview_readiness(job_match_score: float, missing_technical: List[str],
+def interview_readiness(overall_score: float, missing_technical: List[str],
                          completeness_score: float, project_quality_score: float) -> Dict:
-    if job_match_score >= 80 and completeness_score >= 75:
+    """
+    `overall_score` is the headline Overall Resume Score (job match 50% +
+    completeness 25% + structure 25%, see resume_overall_score()) -- not
+    the raw job_match_score. Using the blended score means a great JD fit
+    with a half-finished resume no longer reads as "Ready".
+    """
+    if overall_score >= 80:
         level = "Ready"
         summary = "Your resume is well aligned with this role and complete enough to hold up under scrutiny."
-    elif job_match_score >= 60:
+    elif overall_score >= 60:
         level = "Almost Ready"
         summary = "You're a reasonable fit -- closing a few skill or resume gaps would meaningfully help."
-    elif job_match_score >= 40:
+    elif overall_score >= 40:
         level = "Needs Preparation"
         summary = "There are real gaps between your resume and this role. Prepare clear talking points for them."
     else:
@@ -1469,18 +1628,47 @@ def strengths_and_weaknesses(section_analysis: Dict, completeness: Dict, structu
 
 
 # ---------------------------------------------------------------------------
-# 15. FINAL RESULT + ORCHESTRATION
+# 15. JOB MATCH BREAKDOWN CALCULATOR
+# ---------------------------------------------------------------------------
+def calculate_job_match_breakdown(
+    skills_score: float,
+    experience_score: float,
+    education_score: float,
+    semantic_score: float,
+    project_quality_score: float,
+) -> Dict[str, float]:
+    """Return the exact weighted contribution of each factor and the total.
+
+    The UI and the API should use this same breakdown to avoid drift caused by
+    rounding each section up before summing them. Using the raw weighted values
+    keeps the headline score consistent with the per-category totals shown in
+    the Job Match Score breakdown section.
+    """
+    breakdown = {
+        "skills": round(skills_score * 35 / 100, 1),
+        "experience": round(experience_score * 20 / 100, 1),
+        "education": round(education_score * 10 / 100, 1),
+        "semantic": round(semantic_score * 20 / 100, 1),
+        "project_quality": round(project_quality_score * 15 / 100, 1),
+    }
+    breakdown["total"] = round(sum(breakdown.values()), 1)
+    return breakdown
+
+
+# ---------------------------------------------------------------------------
+# 16. FINAL RESULT + ORCHESTRATION
 # ---------------------------------------------------------------------------
 @dataclass
 class AnalysisResult:
     candidate: Dict
-    job_match_score: float          # headline: how well resume fits THIS job (skills/exp/edu/semantic)
+    job_match_score: float          # fit against THIS job's skills/exp/edu/semantic (own breakdown)
+    overall_resume_score: Dict      # headline score: job_match 50% + completeness 25% + structure 25%
     semantic_similarity: Dict       # {"score":.., "method":..}
     resume_completeness: Dict
     resume_structure: Dict
     project_analysis: Dict
     hiring_recommendation: str
-    interview_readiness: Dict
+    interview_readiness: Dict       # derived from overall_resume_score, not raw job_match_score
     strengths_weaknesses: Dict
     skill_match: Dict
     resume_skills_by_category: Dict
@@ -1615,22 +1803,16 @@ def analyze(resume_text: str, jd_text: str) -> AnalysisResult:
 
         # ---- Headline Job Match Score: skills + experience + education +
         #      real resume<->JD semantic similarity, weighted ----
-        # Weighted contribution of each section
-        skills_contribution = round(skills_score * 35 / 100, 1)
-        experience_contribution = round(experience_score * 20 / 100, 1)
-        education_contribution = round(education_score * 10 / 100, 1)
-        semantic_contribution = round(sim["score"] * 20 / 100, 1)
-        project_contribution = round(project_quality["score"] * 15 / 100, 1)
-
-        # Final Job Match Score
-        job_match_score = round(
-            skills_contribution +
-            experience_contribution +
-            education_contribution +
-            semantic_contribution +
-            project_contribution,
-            1
+        # Use the exact weighted breakdown so the total shown in "Your scores"
+        # matches the per-section values displayed underneath.
+        job_breakdown = calculate_job_match_breakdown(
+            skills_score=skills_score,
+            experience_score=experience_score,
+            education_score=education_score,
+            semantic_score=sim["score"],
+            project_quality_score=project_quality["score"],
         )
+        job_match_score = job_breakdown["total"]
 
         critical_missing = skill_match["technical"]["missing"]
         if job_match_score >= 85 and len(critical_missing) <= 1:
@@ -1644,8 +1826,10 @@ def analyze(resume_text: str, jd_text: str) -> AnalysisResult:
         else:
             recommendation = "Weak Match — Not Recommended"
 
+        overall = resume_overall_score(job_match_score, completeness["score"], structure["score"])
+
         readiness = interview_readiness(
-            job_match_score, [s for s in critical_missing],
+            overall["score"], [s for s in critical_missing],
             completeness["score"], project_quality["score"],
         )
         sw = strengths_and_weaknesses(section_analysis, completeness, structure, project_quality, skill_match)
@@ -1687,6 +1871,7 @@ def analyze(resume_text: str, jd_text: str) -> AnalysisResult:
     return AnalysisResult(
         candidate=candidate,
         job_match_score=job_match_score,
+        overall_resume_score=overall,
         semantic_similarity=sim,
         resume_completeness=completeness,
         resume_structure=structure,
@@ -1762,6 +1947,7 @@ if __name__ == "__main__":
     print(json.dumps({
         "candidate": result.candidate,
         "job_match_score": result.job_match_score,
+        "overall_resume_score": result.overall_resume_score,
         "semantic_similarity": result.semantic_similarity,
         "hiring_recommendation": result.hiring_recommendation,
         "interview_readiness": result.interview_readiness,
